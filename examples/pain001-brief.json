@@ -1,0 +1,20 @@
+{
+  "episode_id": "pain-001",
+  "title": "Context-aware receipt-to-job matcher",
+  "pain_point": "Materials from multiple suppliers end up charged to the wrong job.",
+  "industry": "Contractor / Handyman",
+  "role": "Owner / GC",
+  "backend_summary": [
+    "Vision AI reads each receipt.",
+    "A reasoning step checks crew member, work schedule, supplier, items and recent job history.",
+    "Deterministic rules auto-accept only high-confidence matches; ambiguous purchases become one short review question."
+  ],
+  "viewer_diy": [
+    "Active Jobs sheet",
+    "WhatsApp/Telegram receipt inbox",
+    "n8n + vision model",
+    "Job + Confidence + Reason output",
+    "REVIEW queue for low confidence"
+  ],
+  "target_seconds": 58
+}

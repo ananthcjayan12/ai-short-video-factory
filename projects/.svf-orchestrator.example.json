@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "active_profile": "quality",
+  "providers": {
+    "infinite_talk": {
+      "enabled": false,
+      "command_template": "",
+      "media_command_template": "YOUR_INFINITETALK_COMMAND --prompt {prompt} --reference {reference} --output {output} --model {model}"
+    },
+    "custom_cli": {
+      "enabled": false,
+      "command_template": "YOUR_STRUCTURED_CLI {prompt} {output} {model}",
+      "media_command_template": "YOUR_AUDIO_CLI --text-file {prompt} --output {output} --model {model}"
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "ai-short-video-factory-render-runtime",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Pinned HyperFrames + Playwright runtime for AI Shorts production",
+  "scripts": {
+    "doctor": "hyperframes doctor",
+    "preview": "hyperframes preview --port 3002",
+    "render": "hyperframes render",
+    "record:demo": "node scripts/record_demo.mjs"
+  },
+  "dependencies": {
+    "hyperframes": "0.7.62",
+    "gsap": "3.13.0",
+    "playwright": "^1.55.0"
+  },
+  "engines": {"node": ">=22"}
+}
