@@ -1,0 +1,59 @@
+{
+  "version": 1,
+  "tasks": {
+    "story_structure": {
+      "capability": "structured",
+      "system_file": "story_structure.system.txt",
+      "user_file": "story_structure.user.txt",
+      "default_provider": "claude_code",
+      "default_model": "claude-fable-5",
+      "external_confirmation": false,
+      "max_tokens": 8000
+    },
+  "narration_writer": {
+      "capability": "structured",
+      "system_file": "narration.system.txt",
+      "user_file": "narration.user.txt",
+      "default_provider": "claude_code",
+      "default_model": "claude-fable-5",
+      "external_confirmation": false,
+    "max_tokens": 12000
+  },
+  "narration_rewrite": {
+    "capability": "structured",
+    "system_file": "narration_rewrite.system.txt",
+    "user_file": "narration_rewrite.user.txt",
+    "default_provider": "claude_code",
+    "default_model": "claude-fable-5",
+    "external_confirmation": false,
+    "max_tokens": 12000
+  },
+    "director": {
+      "capability": "structured",
+      "system_file": "director.system.txt",
+      "user_file": "director.user.txt",
+      "default_provider": "claude_code",
+      "default_model": "claude-sonnet-5",
+      "external_confirmation": false,
+      "max_tokens": 16000
+    },
+    "prototype_builder": {
+      "capability": "code",
+      "system_file": "prototype_builder.system.txt",
+      "user_file": "prototype_builder.user.txt",
+      "default_provider": "codex",
+      "default_model": "gpt-5.6-sol",
+      "external_confirmation": false,
+      "max_tokens": 24000
+    },
+    "graphics_builder": {
+      "capability": "structured",
+      "system_file": "graphics_builder.system.txt",
+      "user_file": "graphics_builder.user.txt",
+      "default_provider": "codex",
+      "default_model": "gpt-5.6-terra",
+      "external_confirmation": false,
+      "max_tokens": 16000
+    }
+  }
+}

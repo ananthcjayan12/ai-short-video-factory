@@ -1,0 +1,224 @@
+- generic [active]:
+  - generic [ref=f3e2]:
+    - generic [ref=f3e3]:
+      - generic [ref=f3e4]:
+        - generic [ref=f3e5]: Three source lanes send synthetic invoice cards toward a cost ledger; selected cards dissolve at visible gaps before the ledger.
+        - heading "INVOICES KEEP DISAPPEARING" [level=1] [ref=f3e6]
+        - paragraph [ref=f3e7]: EMAIL • TEXT • PAPER → MISSING FROM PROJECT COSTS
+      - generic [ref=f3e8]:
+        - article [ref=f3e10]:
+          - text: channel
+          - strong [ref=f3e11]: EMAIL
+          - generic [ref=f3e12]: Synthetic PDF invoice lane
+        - article [ref=f3e13]:
+          - text: channel
+          - strong [ref=f3e14]: TEXT
+          - generic [ref=f3e15]: Synthetic forwarded-message lane
+        - article [ref=f3e16]:
+          - text: channel
+          - strong [ref=f3e17]: PAPER
+          - generic [ref=f3e18]: Synthetic paper invoice lane
+        - article [ref=f3e19]:
+          - text: document
+          - strong [ref=f3e20]: INVOICE
+          - generic [ref=f3e21]: Generic synthetic vendor invoice cards
+        - article [ref=f3e22]:
+          - text: status
+          - strong [ref=f3e23]: MISSING
+          - generic [ref=f3e24]: Cards vanish before recording
+        - article [ref=f3e25]:
+          - text: database
+          - strong [ref=f3e26]: PROJECT COSTS
+          - generic [ref=f3e27]: PROJECT COSTS
+      - generic [ref=f3e28]: Continuity · project_cost_record
+    - generic [ref=f3e29]:
+      - generic [ref=f3e30]:
+        - generic [ref=f3e31]: A cursor loops through four task stations, ending in repeated manual entry.
+        - heading "RECONCILIATION = A LOOP" [level=1] [ref=f3e32]
+        - paragraph [ref=f3e33]: SEARCH • SCROLL • DIG • RE-KEY
+      - generic [ref=f3e34]:
+        - article [ref=f3e36]:
+          - text: channel
+          - strong [ref=f3e37]: SEARCH
+          - generic [ref=f3e38]: Generic inbox search panel
+        - article [ref=f3e39]:
+          - text: channel
+          - strong [ref=f3e40]: SCROLL
+          - generic [ref=f3e41]: Generic message thread panel
+        - article [ref=f3e42]:
+          - text: document
+          - strong [ref=f3e43]: DIG
+          - generic [ref=f3e44]: Synthetic paper invoice stack
+        - article [ref=f3e45]:
+          - text: process
+          - strong [ref=f3e46]: RE-KEY
+          - generic [ref=f3e47]: Vendor, job, and amount fields
+        - article [ref=f3e48]:
+          - text: annotation
+          - strong [ref=f3e49]: REPEAT
+          - generic [ref=f3e50]: Cursor path cycles through each task
+      - generic [ref=f3e51]: Continuity · invoice_cards
+    - generic [ref=f3e52]:
+      - generic [ref=f3e53]:
+        - generic [ref=f3e54]: A broken route blocks an invoice, then the camera-equivalent composition expands to reveal the existing connected tools.
+        - heading "WRONG CHANNEL → NO RECORD" [level=1] [ref=f3e55]
+        - paragraph [ref=f3e56]: THE DATA WAS ALREADY THERE
+      - generic [ref=f3e57]:
+        - article [ref=f3e59]:
+          - text: document
+          - strong [ref=f3e60]: INVOICE
+          - generic [ref=f3e61]: Synthetic invoice on an unconnected route
+        - article [ref=f3e62]:
+          - text: status
+          - strong [ref=f3e63]: NO RECORD
+          - generic [ref=f3e64]: Broken connection to project costs
+        - article [ref=f3e65]:
+          - text: process
+          - strong [ref=f3e66]: EXISTING TOOLS
+          - generic [ref=f3e67]: Email, messages, storage, and cost record nodes
+        - article [ref=f3e68]:
+          - text: database
+          - strong [ref=f3e69]: PROJECT COSTS
+          - generic [ref=f3e70]: Existing project-cost record
+        - article [ref=f3e71]:
+          - text: annotation
+          - strong [ref=f3e72]: RIGHT DATA
+          - generic [ref=f3e73]: Needed data is already held across tools
+      - generic [ref=f3e74]: Continuity · project_cost_record
+    - generic [ref=f3e75]:
+      - generic [ref=f3e76]:
+        - generic [ref=f3e77]: Preserved tool nodes connect through a newly revealed intelligence bridge into a central intake folder.
+        - heading "NO NEW PLATFORM" [level=1] [ref=f3e78]
+        - paragraph [ref=f3e79]: INTELLIGENCE BETWEEN EXISTING TOOLS
+      - generic [ref=f3e80]:
+        - article [ref=f3e82]:
+          - text: channel
+          - strong [ref=f3e83]: EXISTING TOOLS
+          - generic [ref=f3e84]: Email, phone photo, and forwarded message sources remain unchanged
+        - article [ref=f3e85]:
+          - text: process
+          - strong [ref=f3e86]: INTELLIGENCE
+          - generic [ref=f3e87]: Layer placed between existing tools and intake
+        - article [ref=f3e88]:
+          - text: document
+          - strong [ref=f3e89]: OMNICHANNEL INTAKE
+          - generic [ref=f3e90]: One intake folder
+        - article [ref=f3e91]:
+          - text: status
+          - strong [ref=f3e92]: NO NEW PLATFORM
+          - generic [ref=f3e93]: Existing nodes persist
+      - generic [ref=f3e94]: Continuity · omnichannel_intake
+    - generic [ref=f3e95]:
+      - generic [ref=f3e96]:
+        - generic [ref=f3e97]: The approval gate unlocks two deterministic outcomes, then three unchanged channels converge into a review queue.
+        - heading "AFTER APPROVAL" [level=1] [ref=f3e98]
+        - paragraph [ref=f3e99]: ONE REVIEW QUEUE
+      - generic [ref=f3e100]:
+        - article [ref=f3e102]:
+          - text: decision
+          - strong [ref=f3e103]: APPROVE
+          - generic [ref=f3e104]: Reviewer approval gate carried from proof recording
+        - article [ref=f3e105]:
+          - text: process
+          - strong [ref=f3e106]: FILE ORIGINAL
+          - generic [ref=f3e107]: Code-controlled filing action
+        - article [ref=f3e108]:
+          - text: database
+          - strong [ref=f3e109]: UPDATE PROJECT COST
+          - generic [ref=f3e110]: Code-controlled cost record update
+        - article [ref=f3e111]:
+          - text: channel
+          - strong [ref=f3e112]: EMAIL • PHOTO • MESSAGE
+          - generic [ref=f3e113]: Staff keep normal arrival channels
+        - article [ref=f3e114]:
+          - text: status
+          - strong [ref=f3e115]: ONE REVIEW QUEUE
+          - generic [ref=f3e116]: All invoices converge here
+      - generic [ref=f3e117]: Continuity · review_queue
+    - generic [ref=f3e118]:
+      - generic [ref=f3e119]:
+        - generic [ref=f3e120]: A manual interpretation loop is removed, leaving a bounded AI middle step that transitions into the first two DIY setup cards.
+        - heading "AI HANDLES INTERPRETATION" [level=1] [ref=f3e121]
+        - paragraph [ref=f3e122]: 1. INVOICES GMAIL LABEL 2. DRIVE UPLOAD FOLDER
+      - generic [ref=f3e123]:
+        - article [ref=f3e125]:
+          - text: process
+          - strong [ref=f3e126]: INTERPRET
+          - generic [ref=f3e127]: Repeated document interpretation in the middle
+        - article [ref=f3e128]:
+          - text: process
+          - strong [ref=f3e129]: AI
+          - generic [ref=f3e130]: Interpretation only
+        - article [ref=f3e131]:
+          - text: channel
+          - strong [ref=f3e132]: INVOICES LABEL
+          - generic [ref=f3e133]: Generic Gmail label representation
+        - article [ref=f3e134]:
+          - text: document
+          - strong [ref=f3e135]: UPLOAD FOLDER
+          - generic [ref=f3e136]: Generic Drive folder representation
+        - article [ref=f3e137]:
+          - text: document
+          - strong [ref=f3e138]: INTAKE
+          - generic [ref=f3e139]: Shared intake destination
+      - generic [ref=f3e140]: Continuity · omnichannel_intake
+    - generic [ref=f3e141]:
+      - generic [ref=f3e142]:
+        - generic [ref=f3e143]: Two setup sources merge into one workflow, then separate deterministic extraction from AI context resolution.
+        - heading "3. ROUTE INTO n8n" [level=1] [ref=f3e144]
+        - paragraph [ref=f3e145]: "CODE: EXTRACT + FINGERPRINT • AI: RESOLVE VENDOR + JOB"
+      - generic [ref=f3e146]:
+        - article [ref=f3e148]:
+          - text: channel
+          - strong [ref=f3e149]: INVOICES LABEL
+          - generic [ref=f3e150]: Generic Gmail label
+        - article [ref=f3e151]:
+          - text: document
+          - strong [ref=f3e152]: UPLOAD FOLDER
+          - generic [ref=f3e153]: Generic Drive folder
+        - article [ref=f3e154]:
+          - text: process
+          - strong [ref=f3e155]: n8n
+          - generic [ref=f3e156]: One workflow receives both sources
+        - article [ref=f3e157]:
+          - text: process
+          - strong [ref=f3e158]: EXTRACT + FINGERPRINT
+          - generic [ref=f3e159]: Code extracts fields and generates content fingerprint
+        - article [ref=f3e160]:
+          - text: process
+          - strong [ref=f3e161]: RESOLVE VENDOR + JOB
+          - generic [ref=f3e162]: AI uses document context
+        - article [ref=f3e163]:
+          - text: status
+          - strong [ref=f3e164]: REVIEW
+          - generic [ref=f3e165]: Resolved output goes to review
+      - generic [ref=f3e166]: Continuity · review_queue
+    - generic [ref=f3e167]:
+      - generic [ref=f3e168]:
+        - generic [ref=f3e169]: A bridge completes the route from familiar tools to project costs, then resolves into a restrained closing line.
+        - heading "THE GAP ISN'T YOUR TOOLS" [level=1] [ref=f3e170]
+        - paragraph [ref=f3e171]: IT'S THE INTELLIGENCE BETWEEN THEM
+      - generic [ref=f3e172]:
+        - article [ref=f3e174]:
+          - text: channel
+          - strong [ref=f3e175]: YOUR TOOLS
+          - generic [ref=f3e176]: Existing source and storage tools
+        - article [ref=f3e177]:
+          - text: process
+          - strong [ref=f3e178]: INTELLIGENCE
+          - generic [ref=f3e179]: Bridge between tools and record
+        - article [ref=f3e180]:
+          - text: database
+          - strong [ref=f3e181]: PROJECT COSTS
+          - generic [ref=f3e182]: Project-cost record reached through bridge
+        - article [ref=f3e183]:
+          - text: text
+          - strong [ref=f3e184]: LET'S LOOK AT IT TOGETHER
+          - generic [ref=f3e185]: Restrained consultation invitation
+      - generic [ref=f3e186]: Continuity · project_cost_record
+  - generic [ref=f3e187]:
+    - button "Previous" [ref=f3e188] [cursor=pointer]
+    - button "Pause" [ref=f3e189] [cursor=pointer]
+    - button "Next" [ref=f3e190] [cursor=pointer]
+    - slider [ref=f3e191]: "0.06"
+    - generic [ref=f3e192]: 0.1 / 116.2s

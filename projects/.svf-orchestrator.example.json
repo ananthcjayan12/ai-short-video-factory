@@ -2,6 +2,14 @@
   "version": 1,
   "active_profile": "quality",
   "providers": {
+    "elevenlabs": {
+      "enabled": true,
+      "voice_id": "YOUR_ELEVENLABS_VOICE_ID"
+    },
+    "gemini": {
+      "enabled": true,
+      "voice_id": "Kore"
+    },
     "infinite_talk": {
       "enabled": false,
       "command_template": "",

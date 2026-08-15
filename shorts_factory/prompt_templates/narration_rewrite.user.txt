@@ -1,0 +1,18 @@
+Episode brief:
+{brief_json}
+
+Approved grounded story plan:
+{story_plan_json}
+
+Grounded claim handles:
+{claim_lines}
+
+Required spoken words: {min_words}–{max_words}
+
+First draft:
+{draft_json}
+
+Blocking quality issues:
+{quality_issues}
+
+Rewrite the entire narration. Keep one paragraph per beat, preserve exact IDs and relevant claim IDs, make the top-level text equal the ordered paragraphs, and correct every listed issue without adding unsupported facts.

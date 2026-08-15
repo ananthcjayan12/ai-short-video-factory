@@ -1,0 +1,156 @@
+- generic [ref=e2]:
+  - generic [ref=e3]:
+    - generic [ref=e4]:
+      - generic [ref=e5]: cause and effect
+      - heading "INVOICES KEEP DISAPPEARING" [level=1] [ref=e6]
+      - paragraph [ref=e7]: Hook with the apparent system failure and reveal the fragmented arrival channels.
+    - generic [ref=e8]:
+      - article [ref=e10]:
+        - text: document
+        - strong [ref=e11]: INVOICES KEEP DISAPPEARING
+        - generic [ref=e12]: "Vertical deterministic animation: a project-cost ledger sits at the bottom while synthetic invoice cards enter from email, text, and paper lanes. Seve"
+      - article [ref=e13]:
+        - text: process
+        - strong [ref=e14]: EMAIL • TEXT • PAPER
+        - generic [ref=e15]: "Vertical deterministic animation: a project-cost ledger sits at the bottom while synthetic invoice cards enter from email, text, and paper lanes. Seve"
+      - article [ref=e16]:
+        - text: decision
+        - strong [ref=e17]: MISSING FROM PROJECT COSTS
+        - generic [ref=e18]: "Vertical deterministic animation: a project-cost ledger sits at the bottom while synthetic invoice cards enter from email, text, and paper lanes. Seve"
+  - generic [ref=e19]:
+    - generic [ref=e20]:
+      - generic [ref=e21]: cause and effect
+      - heading "SEARCH" [level=1] [ref=e22]
+      - paragraph [ref=e23]: Make the repetitive reconciliation burden concrete.
+    - generic [ref=e24]:
+      - article [ref=e26]:
+        - text: document
+        - strong [ref=e27]: SEARCH
+        - generic [ref=e28]: Deterministic split-screen workflow showing a synthetic inbox search, message scroll, paper-stack search, and manual form entry. A cursor path loops b
+      - article [ref=e29]:
+        - text: process
+        - strong [ref=e30]: SCROLL
+        - generic [ref=e31]: Deterministic split-screen workflow showing a synthetic inbox search, message scroll, paper-stack search, and manual form entry. A cursor path loops b
+      - article [ref=e32]:
+        - text: decision
+        - strong [ref=e33]: DIG
+        - generic [ref=e34]: Deterministic split-screen workflow showing a synthetic inbox search, message scroll, paper-stack search, and manual form entry. A cursor path loops b
+      - article [ref=e35]:
+        - text: database
+        - strong [ref=e36]: "RE-KEY: VENDOR • JOB • AMOUNT"
+        - generic [ref=e37]: Deterministic split-screen workflow showing a synthetic inbox search, message scroll, paper-stack search, and manual form entry. A cursor path loops b
+    - generic [ref=e38]: Continuity · MISSING FROM PROJECT COSTS
+  - generic [ref=e39]:
+    - generic [ref=e40]:
+      - generic [ref=e41]: cause and effect
+      - heading "WRONG CHANNEL → NO RECORD" [level=1] [ref=e42]
+      - paragraph [ref=e43]: Connect channel fragmentation to missing records, then introduce the key insight.
+    - generic [ref=e44]:
+      - article [ref=e46]:
+        - text: document
+        - strong [ref=e47]: WRONG CHANNEL → NO RECORD
+        - generic [ref=e48]: A deterministic causal diagram first shows an invoice diverted from the project-cost record by a broken connection. The view then zooms out to reveal
+      - article [ref=e49]:
+        - text: process
+        - strong [ref=e50]: THE DATA WAS ALREADY THERE
+        - generic [ref=e51]: A deterministic causal diagram first shows an invoice diverted from the project-cost record by a broken connection. The view then zooms out to reveal
+    - generic [ref=e52]: "Continuity · RE-KEY: VENDOR • JOB • AMOUNT"
+  - generic [ref=e53]:
+    - generic [ref=e54]:
+      - generic [ref=e55]: cause and effect
+      - heading "NO NEW PLATFORM" [level=1] [ref=e56]
+      - paragraph [ref=e57]: Explain the architectural change without implying a platform replacement.
+    - generic [ref=e58]:
+      - article [ref=e60]:
+        - text: document
+        - strong [ref=e61]: NO NEW PLATFORM
+        - generic [ref=e62]: "Deterministic systems diagram: existing channel icons remain in place while a highlighted intelligence layer appears between them and a central intake"
+      - article [ref=e63]:
+        - text: process
+        - strong [ref=e64]: INTELLIGENCE BETWEEN EXISTING TOOLS
+        - generic [ref=e65]: "Deterministic systems diagram: existing channel icons remain in place while a highlighted intelligence layer appears between them and a central intake"
+      - article [ref=e66]:
+        - text: decision
+        - strong [ref=e67]: OMNICHANNEL INTAKE
+        - generic [ref=e68]: "Deterministic systems diagram: existing channel icons remain in place while a highlighted intelligence layer appears between them and a central intake"
+    - generic [ref=e69]: Continuity · THE DATA WAS ALREADY THERE
+  - generic [ref=e70]:
+    - generic [ref=e71]:
+      - generic [ref=e72]: cause and effect
+      - heading "AFTER APPROVAL" [level=1] [ref=e73]
+      - paragraph [ref=e74]: Clarify that deterministic code acts only after approval and show the unified operational result.
+    - generic [ref=e75]:
+      - article [ref=e77]:
+        - text: document
+        - strong [ref=e78]: AFTER APPROVAL
+        - generic [ref=e79]: "Continue from an approval gate in a deterministic diagram. Only after the gate turns approved do two code-controlled arrows activate: file original an"
+      - article [ref=e80]:
+        - text: process
+        - strong [ref=e81]: CODE FILES ORIGINAL
+        - generic [ref=e82]: "Continue from an approval gate in a deterministic diagram. Only after the gate turns approved do two code-controlled arrows activate: file original an"
+      - article [ref=e83]:
+        - text: decision
+        - strong [ref=e84]: CODE UPDATES PROJECT COST
+        - generic [ref=e85]: "Continue from an approval gate in a deterministic diagram. Only after the gate turns approved do two code-controlled arrows activate: file original an"
+      - article [ref=e86]:
+        - text: database
+        - strong [ref=e87]: ONE REVIEW QUEUE
+        - generic [ref=e88]: "Continue from an approval gate in a deterministic diagram. Only after the gate turns approved do two code-controlled arrows activate: file original an"
+    - generic [ref=e89]: Continuity · OMNICHANNEL INTAKE
+  - generic [ref=e90]:
+    - generic [ref=e91]:
+      - generic [ref=e92]: cause and effect
+      - heading "AI HANDLES INTERPRETATION" [level=1] [ref=e93]
+      - paragraph [ref=e94]: Summarize the AI's bounded role and begin the reproducible DIY setup.
+    - generic [ref=e95]:
+      - article [ref=e97]:
+        - text: document
+        - strong [ref=e98]: AI HANDLES INTERPRETATION
+        - generic [ref=e99]: A deterministic before-and-after diagram removes only the repetitive interpretation loop from the middle of the workflow. Transition into DIY step car
+      - article [ref=e100]:
+        - text: process
+        - strong [ref=e101]: 1. INVOICES GMAIL LABEL
+        - generic [ref=e102]: A deterministic before-and-after diagram removes only the repetitive interpretation loop from the middle of the workflow. Transition into DIY step car
+      - article [ref=e103]:
+        - text: decision
+        - strong [ref=e104]: 2. DRIVE UPLOAD FOLDER
+        - generic [ref=e105]: A deterministic before-and-after diagram removes only the repetitive interpretation loop from the middle of the workflow. Transition into DIY step car
+    - generic [ref=e106]: Continuity · ONE REVIEW QUEUE
+  - generic [ref=e107]:
+    - generic [ref=e108]:
+      - generic [ref=e109]: cause and effect
+      - heading "3. ROUTE INTO n8n" [level=1] [ref=e110]
+      - paragraph [ref=e111]: Show the DIY orchestration and responsibility split precisely.
+    - generic [ref=e112]:
+      - article [ref=e114]:
+        - text: document
+        - strong [ref=e115]: 3. ROUTE INTO n8n
+        - generic [ref=e116]: "Deterministic pipeline diagram using synthetic document cards: Gmail label and Drive folder feed one n8n workflow; code extracts fields and generates"
+      - article [ref=e117]:
+        - text: process
+        - strong [ref=e118]: "CODE: EXTRACT + FINGERPRINT"
+        - generic [ref=e119]: "Deterministic pipeline diagram using synthetic document cards: Gmail label and Drive folder feed one n8n workflow; code extracts fields and generates"
+      - article [ref=e120]:
+        - text: decision
+        - strong [ref=e121]: "AI: RESOLVE VENDOR + JOB"
+        - generic [ref=e122]: "Deterministic pipeline diagram using synthetic document cards: Gmail label and Drive folder feed one n8n workflow; code extracts fields and generates"
+    - generic [ref=e123]: Continuity · 2. DRIVE UPLOAD FOLDER
+  - generic [ref=e124]:
+    - generic [ref=e125]:
+      - generic [ref=e126]: cause and effect
+      - heading "THE GAP ISN'T YOUR TOOLS" [level=1] [ref=e127]
+      - paragraph [ref=e128]: "Close on the central systems insight and consultation invitation without using a talking-head or CTA scene. [deterministic fallback: visual budget]"
+    - generic [ref=e129]:
+      - article [ref=e131]:
+        - text: document
+        - strong [ref=e132]: THE GAP ISN'T YOUR TOOLS
+        - generic [ref=e133]: "Deterministic closing composition: existing tools remain on opposite sides of a highlighted intelligence bridge. The bridge completes the path to the"
+      - article [ref=e134]:
+        - text: process
+        - strong [ref=e135]: IT'S THE INTELLIGENCE BETWEEN THEM
+        - generic [ref=e136]: "Deterministic closing composition: existing tools remain on opposite sides of a highlighted intelligence bridge. The bridge completes the path to the"
+      - article [ref=e137]:
+        - text: decision
+        - strong [ref=e138]: LET'S LOOK AT IT TOGETHER
+        - generic [ref=e139]: "Deterministic closing composition: existing tools remain on opposite sides of a highlighted intelligence bridge. The bridge completes the path to the"
+    - generic [ref=e140]: "Continuity · AI: RESOLVE VENDOR + JOB"

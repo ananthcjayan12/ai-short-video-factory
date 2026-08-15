@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#111316" />
+    <title>Factory Desk — AI Short Video Factory</title>
+    <meta name="description" content="Local production desk for narration-first short video projects." />
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Episode navigation">
+        <div class="brand">
+          <div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>
+          <div>
+            <strong>Factory Desk</strong>
+            <small>Short-form production</small>
+          </div>
+        </div>
+
+        <button class="button button-primary new-episode" id="new-episode-button" type="button">
+          <span aria-hidden="true">＋</span> New episode
+        </button>
+
+        <div class="nav-heading">
+          <span>Episodes</span>
+          <span id="episode-count" class="count-badge">0</span>
+        </div>
+        <nav id="episode-list" class="episode-list" aria-live="polite"></nav>
+
+        <div class="sidebar-foot">
+          <div class="local-chip"><i></i> Local workspace</div>
+          <button class="text-button" id="health-button" type="button">System health <span>↗</span></button>
+        </div>
+      </aside>
+
+      <main class="main" id="main">
+        <header class="topbar">
+          <button class="mobile-menu" id="mobile-menu" type="button" aria-label="Open episode navigation">☰</button>
+          <div class="breadcrumb"><span>Production</span><b>/</b><strong id="breadcrumb-title">Overview</strong></div>
+          <div class="topbar-actions">
+            <div class="worker-status" id="worker-status"><i></i><span>Worker ready</span></div>
+            <button class="icon-button" id="refresh-button" type="button" aria-label="Refresh dashboard">↻</button>
+          </div>
+        </header>
+
+        <section id="loading-view" class="loading-view" aria-label="Loading">
+          <div class="loading-orbit"><span></span></div>
+          <p>Opening the production floor…</p>
+        </section>
+
+        <section id="empty-view" class="empty-view hidden">
+          <div class="empty-number">01</div>
+          <p class="eyebrow">Your production floor is ready</p>
+          <h1>Turn a business pain point into a finished short.</h1>
+          <p class="empty-copy">The factory keeps narration as the master clock, validates every handoff, and lets you approve the creative decisions that matter.</p>
+          <div class="empty-actions">
+            <button class="button button-primary" data-open-create type="button">Create first episode</button>
+            <button class="button button-quiet" id="reference-demo-button" type="button">Open reference demo</button>
+          </div>
+          <div class="empty-flow" aria-label="Production stages">
+            <span>Brief</span><b>→</b><span>Narration</span><b>→</b><span>Direction</span><b>→</b><span>Assets</span><b>→</b><span>Render</span>
+          </div>
+        </section>
+
+        <section id="workspace-view" class="workspace hidden" aria-live="polite"></section>
+      </main>
+    </div>
+
+    <dialog id="create-dialog" class="dialog">
+      <form id="create-form" method="dialog">
+        <div class="dialog-head">
+          <div>
+            <p class="eyebrow">New production</p>
+            <h2>Start with the real problem.</h2>
+          </div>
+          <button class="dialog-close" value="cancel" type="submit" aria-label="Close">×</button>
+        </div>
+        <div class="form-grid">
+          <label>
+            <span>Episode ID</span>
+            <input name="episode_id" required minlength="2" maxlength="64" placeholder="pain-002" pattern="[a-z0-9_-]+" />
+            <small>Lowercase letters, numbers and hyphens.</small>
+          </label>
+          <label>
+            <span>Working title</span>
+            <input name="title" required minlength="3" placeholder="AI freight quote normalizer" />
+          </label>
+          <label class="form-wide">
+            <span>Pain point</span>
+            <textarea name="pain_point" required minlength="8" rows="3" placeholder="Quotes arrive as PDF, Excel, email and WhatsApp, so coordinators retype everything."></textarea>
+          </label>
+          <label>
+            <span>Industry</span>
+            <input name="industry" value="Small Business" required />
+          </label>
+          <label>
+            <span>Viewer role</span>
+            <input name="role" value="Owner" required />
+          </label>
+          <label>
+            <span>Case type</span>
+            <select name="case_nature">
+              <option value="synthetic_demo">Synthetic demo</option>
+              <option value="real">Real client story</option>
+              <option value="hypothetical">Hypothetical scenario</option>
+            </select>
+            <small>This controls whether narration may call it a client engagement.</small>
+          </label>
+          <label>
+            <span>Target length</span>
+            <div class="input-suffix"><input name="target_seconds" type="number" min="15" max="180" value="58" /><b>sec</b></div>
+          </label>
+          <label class="form-wide">
+            <span>Backend facts <em>optional, one per line</em></span>
+            <textarea name="backend_summary" rows="3" placeholder="OCR reads each quote&#10;Rules normalize units and currencies"></textarea>
+          </label>
+          <label class="form-wide">
+            <span>DIY stack <em>optional, one per line</em></span>
+            <textarea name="viewer_diy" rows="3" placeholder="Shared inbox&#10;n8n workflow&#10;Results sheet"></textarea>
+          </label>
+        </div>
+        <div class="dialog-actions">
+          <button class="button button-quiet" value="cancel" type="submit">Cancel</button>
+          <button class="button button-primary" id="create-submit" type="button">Create production</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="health-dialog" class="dialog health-dialog">
+      <div class="dialog-head">
+        <div><p class="eyebrow">Capability check</p><h2>System health</h2></div>
+        <button class="dialog-close" id="health-close" type="button" aria-label="Close">×</button>
+      </div>
+      <div id="health-content" class="health-content"></div>
+    </dialog>
+
+    <div id="job-tray" class="job-tray hidden" aria-live="polite"></div>
+    <div id="toast" class="toast hidden" role="status"></div>
+
+    <input id="voice-upload" type="file" accept="audio/*,.wav,.mp3,.m4a,.aac,.flac" hidden />
+    <input id="head-upload" type="file" accept="video/*,.mp4,.mov,.webm,.m4v" hidden />
+
+    <script src="/static/app.js" defer></script>
+  </body>
+</html>

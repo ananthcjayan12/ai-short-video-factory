@@ -1,24 +1,80 @@
 from __future__ import annotations
 
 import copy
-import os
 import shutil
 from pathlib import Path
 from typing import Any
 
+from .integrations import provider_credentials_available
+
+
+CODEX_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
+CODEX_REASONING = ["low", "medium", "high", "xhigh", "max", "ultra"]
+GROK_MODELS = ["grok-4.5"]
+ANTIGRAVITY_MODELS = [
+    "authenticated-default", "gemini-3.6-flash-high", "gemini-3.6-flash-medium",
+    "gemini-3.6-flash-low", "gemini-3.5-flash-high", "gemini-3.5-flash-medium",
+    "gemini-3.5-flash-low", "gemini-3.1-pro-high", "gemini-3.1-pro-low",
+    "claude-sonnet-4-6", "claude-opus-4-6-thinking", "gpt-oss-120b-medium",
+]
+COPILOT_MODELS = ["claude-sonnet-4.6", "claude-haiku-4.5", "claude-sonnet-5", "claude-opus-5"]
+GEMINI_MODELS = [
+    "gemini-3.1-pro-preview", "gemini-3.5-flash", "gemini-3.1-flash-lite",
+    "gemini-2.5-pro", "gemini-2.5-flash", "gemini-2.5-flash-lite",
+]
+ANTHROPIC_MODELS = ["claude-fable-5", "claude-opus-4-8", "claude-sonnet-5", "claude-haiku-4-5"]
 
 PROVIDERS: dict[str, dict[str, Any]] = {
     "codex": {
-        "id": "codex", "label": "Codex CLI", "mode": "command", "adapter": "command",
+        "id": "codex", "label": "Codex CLI (ChatGPT)", "mode": "command", "adapter": "native",
         "executable": "codex", "capabilities": ["structured", "code"],
         "command_template": "codex exec --skip-git-repo-check --model {model} --output-last-message {output} - < {prompt}",
-        "models": ["gpt-5.6-sol", "gpt-5.6-terra"],
+        "models": CODEX_MODELS, "reasoning_efforts": CODEX_REASONING,
     },
     "claude_code": {
-        "id": "claude_code", "label": "Claude Code", "mode": "command", "adapter": "command",
+        "id": "claude_code", "label": "Claude Code CLI", "mode": "command", "adapter": "command",
         "executable": "claude", "capabilities": ["structured", "code"],
         "command_template": "claude --model {model} -p \"$(cat {prompt})\" > {output}",
         "models": ["claude-fable-5", "claude-sonnet-5"],
+    },
+    "anthropic": {
+        "id": "anthropic", "label": "Claude API", "mode": "api", "adapter": "native",
+        "executable": None, "capabilities": ["structured"], "models": ANTHROPIC_MODELS,
+    },
+    "gemini": {
+        "id": "gemini", "label": "Gemini API + TTS", "mode": "api", "adapter": "native",
+        "executable": None, "capabilities": ["structured", "audio"],
+        "models": GEMINI_MODELS + ["gemini-3.1-flash-tts-preview"],
+        "models_by_capability": {"structured": GEMINI_MODELS, "audio": ["gemini-3.1-flash-tts-preview"]},
+        "voice_id": "Kore",
+    },
+    "grok": {
+        "id": "grok", "label": "Grok CLI (SuperGrok)", "mode": "command", "adapter": "native",
+        "executable": "grok", "capabilities": ["structured"], "models": GROK_MODELS,
+        "reasoning_efforts": ["low", "medium", "high"],
+    },
+    "antigravity": {
+        "id": "antigravity", "label": "Antigravity CLI", "mode": "command", "adapter": "native",
+        "executable": "agy", "capabilities": ["structured"], "models": ANTIGRAVITY_MODELS,
+    },
+    "copilot": {
+        "id": "copilot", "label": "GitHub Copilot CLI", "mode": "command", "adapter": "native",
+        "executable": "copilot", "capabilities": ["structured"], "models": COPILOT_MODELS,
+    },
+    "zai": {
+        "id": "zai", "label": "Z.AI API", "mode": "api", "adapter": "native",
+        "executable": None, "capabilities": ["structured"], "models": ["glm-5.2"],
+        "reasoning_efforts": ["high"],
+    },
+    "moonshot": {
+        "id": "moonshot", "label": "Moonshot / Kimi API", "mode": "api", "adapter": "native",
+        "executable": None, "capabilities": ["structured"],
+        "models": ["kimi-k3", "kimi-k2.7-code", "kimi-k2.7-code-highspeed", "kimi-k2.6"],
+    },
+    "elevenlabs": {
+        "id": "elevenlabs", "label": "ElevenLabs TTS", "mode": "api", "adapter": "native",
+        "executable": None, "capabilities": ["audio"], "models": ["eleven_v3", "eleven_multilingual_v2"],
+        "voice_id": "",
     },
     "custom_cli": {
         "id": "custom_cli", "label": "Custom CLI", "mode": "command", "adapter": "command",
@@ -57,6 +113,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
 }
 
 TASKS = [
+    {"id": "story_structure", "capability": "structured", "group": "Story"},
     {"id": "narration_writer", "capability": "structured", "group": "Story"},
     {"id": "narration_qa", "capability": "structured", "group": "Story"},
     {"id": "voice_generator", "capability": "audio", "group": "Audio"},
@@ -80,6 +137,7 @@ def route(provider: str, model: str, *, retries: int = 1, timeout: int = 900,
 
 
 DEFAULT_ROUTES = {
+    "story_structure": route("claude_code", "claude-fable-5", fallback_provider="codex", fallback_model="gpt-5.6-sol"),
     "narration_writer": route("claude_code", "claude-fable-5", fallback_provider="codex", fallback_model="gpt-5.6-sol"),
     "narration_qa": route("codex", "gpt-5.6-sol", fallback_provider="claude_code", fallback_model="claude-sonnet-5"),
     "voice_generator": route("manual_voice", "external", retries=0, timeout=0, fallback_provider="mock"),
@@ -105,8 +163,21 @@ def default_config() -> dict[str, Any]:
         "version": 1,
         "active_profile": "quality",
         "tasks": copy.deepcopy(DEFAULT_ROUTES),
-        "providers": {pid: {"enabled": True, "command_template": p.get("command_template", ""), "media_command_template": p.get("media_command_template", "")} for pid, p in PROVIDERS.items()},
+        "providers": {
+            pid: {
+                "enabled": True,
+                "command_template": p.get("command_template", ""),
+                "media_command_template": p.get("media_command_template", ""),
+                "voice_id": p.get("voice_id", ""),
+            }
+            for pid, p in PROVIDERS.items()
+        },
     }
+
+
+def provider_models(provider_id: str, capability: str) -> list[str]:
+    provider = PROVIDERS[provider_id]
+    return list(provider.get("models_by_capability", {}).get(capability) or provider["models"])
 
 
 def resolve_task(config: dict[str, Any], task_id: str) -> dict[str, Any]:
@@ -114,10 +185,24 @@ def resolve_task(config: dict[str, Any], task_id: str) -> dict[str, Any]:
     if task_id not in defs:
         raise ValueError(f"Unknown task: {task_id}")
     route_cfg = copy.deepcopy(config["tasks"][task_id])
-    provider = PROVIDERS[route_cfg["provider"]]
+    provider_id = route_cfg.get("provider")
+    if provider_id not in PROVIDERS:
+        raise ValueError(f"Unknown provider: {provider_id}")
+    provider = PROVIDERS[provider_id]
     capability = defs[task_id]["capability"]
     if capability not in provider["capabilities"]:
         raise ValueError(f"Provider {provider['id']} cannot execute {capability} task {task_id}")
+    if route_cfg.get("model") not in provider_models(provider["id"], capability):
+        raise ValueError(f"Model {route_cfg.get('model')} is not registered for {provider['id']} {capability}")
+    efforts = provider.get("reasoning_efforts", [])
+    if efforts:
+        route_cfg.setdefault("reasoning_effort", efforts[0])
+        if route_cfg["reasoning_effort"] not in efforts:
+            raise ValueError(f"Unsupported reasoning effort for {provider['id']}: {route_cfg['reasoning_effort']}")
+    if provider["mode"] not in {"manual", "mock"} and int(route_cfg.get("timeout_seconds", 0) or 0) <= 0:
+        # Manual routes intentionally use zero. When an operator switches that
+        # task to a live provider, give it a real execution deadline.
+        route_cfg["timeout_seconds"] = 900
     fallback = PROVIDERS.get(route_cfg.get("fallback_provider"), {})
     if fallback and capability not in fallback.get("capabilities", []):
         raise ValueError(f"Fallback {fallback.get('id')} cannot execute {capability} task {task_id}")
@@ -129,6 +214,8 @@ def resolve_task(config: dict[str, Any], task_id: str) -> dict[str, Any]:
         "provider_adapter": provider["adapter"],
         "command_template": override.get("command_template") or provider.get("command_template", ""),
         "media_command_template": override.get("media_command_template") or provider.get("media_command_template", ""),
+        "voice_id": override.get("voice_id") or provider.get("voice_id", ""),
+        "reasoning_efforts": provider.get("reasoning_efforts", []),
     })
     return route_cfg
 
@@ -148,6 +235,9 @@ def provider_health(provider_id: str) -> dict[str, Any]:
         return {"healthy": ok, "status": "ready" if ok else "missing", "detail": "package installed" if ok else "run npm install && npx playwright install chromium"}
     if provider_id in {"custom_cli", "infinite_talk"}:
         return {"healthy": False, "status": "unconfigured", "detail": "set a command template in projects/.svf-orchestrator.json"}
+    if p["mode"] in {"api", "command"} and provider_id != "claude_code":
+        ok, detail = provider_credentials_available(provider_id)
+        return {"healthy": ok, "status": "ready" if ok else "missing", "detail": detail}
     executable = p.get("executable")
     ok = bool(executable and shutil.which(executable))
     return {"healthy": ok, "status": "ready" if ok else "missing", "detail": executable or "configure command"}

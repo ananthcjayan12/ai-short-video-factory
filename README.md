@@ -5,9 +5,9 @@ A narration-first, agent-orchestrated production system for 45–60 second AI/bu
 The project intentionally separates **creative reasoning**, **media/prototype generation**, and **deterministic rendering**:
 
 ```text
-Pain point / case
+Pain point / verified claims
       ↓
-Narration Writer → Narration QA
+Story Structure → Narration Writer → Narration QA
       ↓
 Voice track = MASTER CLOCK
       ↓
@@ -33,7 +33,7 @@ Do **not** ask one model to “make the whole video.” The model should make bo
 
 The result is easier to repair:
 
-- bad narration → regenerate narration only;
+- weak narration → inspect its story spine and quality report, then regenerate narration only;
 - weak direction → regenerate Director plan only;
 - broken prototype → rerun code builder only;
 - failed demo clip → rerun one Playwright job;
@@ -59,7 +59,9 @@ The repo includes a complete reference episode for **PAIN-001 — Context-aware 
 - FFmpeg + FFprobe
 - HyperFrames runtime (pinned in `package.json`)
 - Playwright Chromium for automatic screen recording
-- optional: authenticated `codex` and/or `claude` CLIs for real agent stages
+- optional: authenticated Codex, Claude, Grok, Antigravity or Copilot CLIs
+- optional: Anthropic, Gemini, Moonshot/Kimi or Z.AI API keys for structured stages
+- optional: ElevenLabs or Gemini credentials for generated master voice
 
 ## Install
 
@@ -68,12 +70,39 @@ git clone <this-repo>
 cd ai-short-video-factory
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e ".[dev]"
+pip install -e ".[ai,dev]"
 npm install
 npx playwright install chromium
 npm run doctor
 svf doctor
 ```
+
+## Factory Desk UI
+
+The local Factory Desk puts the production workflow behind a visual interface while keeping the same schema validation, capability routing and approval gates as the CLI.
+
+```bash
+nvm use
+source .venv/bin/activate
+svf ui
+```
+
+Then open [http://127.0.0.1:8787](http://127.0.0.1:8787). From the desk you can:
+
+- create and switch between episode workspaces;
+- generate narration and voice timing tracks;
+- review and explicitly approve Director plans;
+- build portrait-first prototypes whose visual reveals follow Whisper word timestamps, run cue-by-cue reel/phone QA, record deterministic demos and attach presenter clips;
+- build and scrub the complete browser timeline before rendering, then run QA, render previews/finals and explicitly approve the final video;
+- inspect provider readiness and queued production work;
+- route every task to a compatible provider/model per episode;
+- inspect retained prompts, schemas, responses and invocation records;
+- stop durable jobs safely and recover after a UI restart;
+- archive a stage and rebuild it without destroying the prior version.
+
+For the complete workflow, see [Creating a New Video](docs/CREATING_A_VIDEO.md).
+
+The UI binds to localhost by default because it controls local files and production tools. Publishing still requires a separate operator-approved step.
 
 ## Fastest working demo
 
@@ -98,7 +127,8 @@ projects/pain-001/
 ├── 08_graphics/
 ├── 09_composition/
 ├── 10_final/
-└── _requests/
+├── _requests/
+└── _control/
 ```
 
 ### Record the prototype automatically
@@ -107,7 +137,7 @@ projects/pain-001/
 svf record-demos pain-001
 ```
 
-The command starts the local prototype server, runs all Playwright scene jobs, saves the `.webm` clips, and attaches them to the approved Director plan.
+The command starts the local prototype server, drives each prototype scene from its validated Whisper-anchored cue timeline, trims loading preroll, saves the `.webm` clips, and attaches them to the approved Director plan.
 
 ### Add your real talking-head clips
 
@@ -125,6 +155,7 @@ If you do not import them, HyperFrames renders deliberate presenter placeholders
 ### Render
 
 ```bash
+svf prepare-preview pain-001
 svf render-preview pain-001
 svf render-final pain-001
 ```
@@ -147,13 +178,14 @@ svf init pain-101 \
 svf narrate pain-101
 # Generate/import your final voice track here
 svf import-voice pain-101 ~/voice/pain-101.wav
+svf align-voice pain-101
 svf direct pain-101
 svf approve-director pain-101
 svf prototype-prompt pain-101
 svf build-prototype pain-101
 ```
 
-The real route is configured in `projects/.svf-orchestrator.json`. Copy the example and change provider/model mappings without changing pipeline code.
+The real route is configured in `projects/.svf-orchestrator.json`, or per episode in the Factory Desk. Copy `.env.example` for API/TTS credentials, then change provider/model mappings without changing pipeline code. See [Agent orchestration](docs/ORCHESTRATION.md) for the complete provider catalog.
 
 ## Provider / task separation
 
@@ -166,6 +198,7 @@ structured · code · audio · browser · talking_head · render
 Main tasks:
 
 ```text
+story_structure
 narration_writer
 narration_qa
 voice_generator
@@ -216,7 +249,7 @@ This is intentionally deterministic: the same demo can be recorded again without
 
 ## HyperFrames contract
 
-The Python composition compiler writes ordinary HTML. Every scene is a `.clip` with `data-start` and `data-duration`. The page listens to `hf-seek` and recomputes scene state from the render clock. That means browser preview and frame rendering use the same timeline semantics.
+Before rendering, the graphics builder creates a validated editorial scene/object/action plan plus individual inspectable scene HTML files and a master graphics preview under `08_graphics/`. The composition compiler then creates a complete, voice-timed interactive preview under `09_composition/preview/`; run `svf prepare-preview <episode-id>` to refresh it without rendering an MP4. Every scene is a `.clip` with `data-start` and `data-duration`. The page listens to `hf-seek` and recomputes scene state from the render clock, so browser preview and frame rendering use the same timeline semantics.
 
 ## Talking head / InfiniteTalk
 
@@ -233,10 +266,9 @@ Recommended editorial policy:
 
 This MVP intentionally leaves these as adapters instead of hard-coding vendors:
 
-1. TTS provider implementation (ElevenLabs/HeyGen/other).
-2. InfiniteTalk command adapter details.
-3. auto-generated Playwright plans for arbitrary prototypes.
-4. final visual QA using a vision-capable model.
-5. YouTube/Instagram publishing after explicit approval.
+1. InfiniteTalk command adapter details.
+2. auto-generated Playwright plans for arbitrary prototypes.
+3. final visual QA using a vision-capable model.
+4. YouTube/Instagram publishing after explicit approval.
 
 The pipeline contracts already have slots for these, so adding them does not require redesigning the project.

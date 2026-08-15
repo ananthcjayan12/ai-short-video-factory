@@ -3,13 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from .io import load_model, write_json
-from .models import EpisodeBrief, EpisodeStage, EpisodeState
+from .models import EpisodeBrief, EpisodeStage, EpisodeState, ProjectSettings
 
 
 FOLDERS = [
     "00_input", "01_narration", "02_voice", "03_director", "04_prototype",
     "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics",
-    "09_composition", "10_final", "_requests",
+    "09_composition", "10_final", "_requests", "_control",
 ]
 
 
@@ -20,6 +20,16 @@ class ProjectStore:
 
     def project_dir(self, episode_id: str) -> Path:
         return self.root / episode_id
+
+    def settings(self) -> ProjectSettings:
+        path = self.root / ".svf-project.json"
+        if not path.exists():
+            return ProjectSettings()
+        return load_model(path, ProjectSettings)
+
+    def save_settings(self, settings: ProjectSettings) -> ProjectSettings:
+        write_json(self.root / ".svf-project.json", settings)
+        return settings
 
     def create(self, brief: EpisodeBrief, *, overwrite: bool = False) -> Path:
         d = self.project_dir(brief.episode_id)

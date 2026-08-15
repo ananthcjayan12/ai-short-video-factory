@@ -13,6 +13,11 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=str(root), **kwargs)
 
-with socketserver.TCPServer(("127.0.0.1", port), Handler) as httpd:
+
+class ReusableTCPServer(socketserver.TCPServer):
+    allow_reuse_address = True
+
+
+with ReusableTCPServer(("127.0.0.1", port), Handler) as httpd:
     print(f"Serving {root} at http://127.0.0.1:{port}")
     httpd.serve_forever()

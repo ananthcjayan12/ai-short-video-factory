@@ -1,0 +1,32 @@
+- generic [ref=e2]:
+  - complementary "Episode navigation" [ref=e3]:
+    - generic [ref=e9]:
+      - strong [ref=e10]: Factory Desk
+      - generic [ref=e11]: Short-form production
+    - button "New episode" [ref=e12] [cursor=pointer]
+    - generic [ref=e13]:
+      - generic [ref=e14]: Episodes
+      - generic [ref=e15]: "2"
+    - navigation [ref=e16]:
+      - button "Omnichannel invoice inbox with AI deduplication Final Review" [ref=e17] [cursor=pointer]:
+        - strong [ref=e18]: Omnichannel invoice inbox with AI deduplication
+        - generic [ref=e19]: Final Review
+      - button "Context-aware receipt-to-job matcher Director Approved" [ref=e23] [cursor=pointer]:
+        - strong [ref=e24]: Context-aware receipt-to-job matcher
+        - generic [ref=e25]: Director Approved
+    - generic [ref=e29]:
+      - generic [ref=e30]: Local workspace
+      - button "System health ↗" [ref=e32] [cursor=pointer]:
+        - text: System health
+        - generic [ref=e33]: ↗
+  - main [ref=e34]:
+    - generic [ref=e35]:
+      - generic [ref=e36]:
+        - generic [ref=e37]: Production
+        - generic [ref=e38]: /
+        - strong [ref=e39]: Overview
+      - generic [ref=e40]:
+        - generic [ref=e41]: Worker ready
+        - button "Refresh dashboard" [ref=e44] [cursor=pointer]: ↻
+    - region "Loading" [ref=e45]:
+      - paragraph [ref=e48]: Opening the production floor…

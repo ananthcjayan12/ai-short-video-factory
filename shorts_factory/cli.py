@@ -7,11 +7,12 @@ import typer
 
 from .demo import bootstrap_pain001
 from .io import load_model
-from .models import DirectorPlan, EpisodeBrief, Narration
+from .models import DirectorPlan, EpisodeBrief, Narration, ProjectSettings
 from .orchestrator import PROVIDERS, provider_health
 from .pipeline import (
-    approve_director, bootstrap_reference_demo, generate_director_plan, generate_narration,
-    import_talking_head, import_voice, mock_voice, record_demos, render_preview, run_prototype_builder,
+    align_voice, approve_director, bootstrap_reference_demo, generate_director_plan, generate_narration,
+    generate_graphics_plan, generate_story_plan, import_talking_head, import_voice, mock_voice, prepare_timeline_preview,
+    record_demos, render_preview, run_prototype_builder,
     write_prototype_builder_prompt,
 )
 from .project import ProjectStore
@@ -21,6 +22,18 @@ app = typer.Typer(no_args_is_help=True, help="AI Short Video Factory")
 
 def store(root: str) -> ProjectStore:
     return ProjectStore(root)
+
+
+@app.command("talking-head-policy")
+def talking_head_policy(
+    mode: str = typer.Argument(..., help="Use 'allowed' or 'disabled' for the whole project."),
+    root: str = typer.Option("projects"),
+):
+    normalized = mode.strip().lower()
+    if normalized not in {"allowed", "disabled"}:
+        raise typer.BadParameter("Mode must be 'allowed' or 'disabled'")
+    settings = store(root).save_settings(ProjectSettings(include_talking_head=normalized == "allowed"))
+    typer.echo(json.dumps(settings.model_dump(mode="json"), indent=2))
 
 
 @app.command("init")
@@ -61,9 +74,23 @@ def demo(episode_id: str = typer.Argument("pain-001"), root: str = typer.Option(
 
 
 @app.command("narrate")
-def narrate(episode_id: str, agent: str = typer.Option(None), root: str = typer.Option("projects")):
-    n = generate_narration(store(root), episode_id, agent_kind=agent)
+def narrate(
+    episode_id: str, agent: str = typer.Option(None),
+    consume_response: bool = typer.Option(False, help="Validate and consume existing manual response JSON files."),
+    root: str = typer.Option("projects"),
+):
+    n = generate_narration(store(root), episode_id, agent_kind=agent, consume_response=consume_response)
     typer.echo(n.text)
+
+
+@app.command("story")
+def story(
+    episode_id: str, agent: str = typer.Option(None),
+    consume_response: bool = typer.Option(False, help="Validate and consume an existing manual response JSON file."),
+    root: str = typer.Option("projects"),
+):
+    plan = generate_story_plan(store(root), episode_id, agent_kind=agent, consume_response=consume_response)
+    typer.echo(json.dumps(plan.model_dump(mode="json"), indent=2))
 
 
 @app.command("mock-voice")
@@ -76,9 +103,23 @@ def voice_import(episode_id: str, path: Path, root: str = typer.Option("projects
     typer.echo(import_voice(store(root), episode_id, path).audio_path)
 
 
+@app.command("align-voice")
+def align_voice_cmd(
+    episode_id: str,
+    force: bool = typer.Option(False, help="Ignore a matching cached Whisper alignment."),
+    root: str = typer.Option("projects"),
+):
+    timing = align_voice(store(root), episode_id, force=force)
+    typer.echo(json.dumps(timing.model_dump(mode="json"), indent=2))
+
+
 @app.command("direct")
-def direct(episode_id: str, agent: str = typer.Option(None), root: str = typer.Option("projects")):
-    plan = generate_director_plan(store(root), episode_id, agent_kind=agent)
+def direct(
+    episode_id: str, agent: str = typer.Option(None),
+    consume_response: bool = typer.Option(False, help="Validate and consume an existing manual response JSON file."),
+    root: str = typer.Option("projects"),
+):
+    plan = generate_director_plan(store(root), episode_id, agent_kind=agent, consume_response=consume_response)
     typer.echo(json.dumps(plan.model_dump(mode="json"), indent=2))
 
 
@@ -110,6 +151,19 @@ def record_demo_cmd(episode_id: str, root: str = typer.Option("projects")):
     for path in paths: typer.echo(path)
 
 
+@app.command("generate-graphics")
+def generate_graphics_cmd(
+    episode_id: str,
+    agent: str = typer.Option(None, help="Use 'mock' for a deterministic offline graphics plan."),
+    consume_response: bool = typer.Option(False, help="Validate and consume an existing manual response JSON file."),
+    root: str = typer.Option("projects"),
+):
+    plan = generate_graphics_plan(
+        store(root), episode_id, agent_kind=agent, consume_response=consume_response,
+    )
+    typer.echo(json.dumps(plan.model_dump(mode="json"), indent=2))
+
+
 @app.command("import-head")
 def import_head_cmd(episode_id: str, scene_id: str, path: Path, root: str = typer.Option("projects")):
     typer.echo(import_talking_head(store(root), episode_id, scene_id, path))
@@ -118,6 +172,12 @@ def import_head_cmd(episode_id: str, scene_id: str, path: Path, root: str = type
 @app.command("render-preview")
 def render_preview_cmd(episode_id: str, root: str = typer.Option("projects")):
     typer.echo(json.dumps(render_preview(store(root), episode_id), indent=2))
+
+
+@app.command("prepare-preview")
+def prepare_preview_cmd(episode_id: str, root: str = typer.Option("projects")):
+    """Build the interactive full timeline without rendering an MP4."""
+    typer.echo(json.dumps(prepare_timeline_preview(store(root), episode_id), indent=2))
 
 
 @app.command("status")
@@ -132,10 +192,32 @@ def doctor():
         h = provider_health(provider_id)
         typer.echo(f"{provider_id:22} {h['status']:12} {h['detail']}")
 
+
+@app.command("ui")
+def ui(
+    host: str = typer.Option("127.0.0.1", help="Interface to bind to."),
+    port: int = typer.Option(8787, min=1, max=65535, help="Port for the Factory Desk."),
+    reload: bool = typer.Option(False, help="Reload automatically while developing the UI."),
+):
+    """Open the local Factory Desk web interface."""
+    import uvicorn
+
+    typer.echo(f"Factory Desk: http://{host}:{port}")
+    uvicorn.run("shorts_factory.ui.server:app", host=host, port=port, reload=reload)
+
 @app.command("render-final")
 def render_final_cmd(episode_id: str, root: str = typer.Option("projects")):
     from .pipeline import render_final
     typer.echo(json.dumps(render_final(store(root), episode_id), indent=2))
+
+
+@app.command("approve-final")
+def approve_final_cmd(episode_id: str, root: str = typer.Option("projects")):
+    s = store(root)
+    final_path = s.project_dir(episode_id) / "10_final/final.mp4"
+    if not final_path.exists():
+        raise typer.BadParameter("Render final.mp4 before approving it")
+    typer.echo(json.dumps(s.approve_final(episode_id).model_dump(mode="json"), indent=2))
 
 
 @app.command("qa")

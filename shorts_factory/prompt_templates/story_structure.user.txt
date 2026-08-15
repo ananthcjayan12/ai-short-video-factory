@@ -1,0 +1,17 @@
+Episode: {episode_id}
+Title: {title}
+Industry: {industry}
+Viewer role: {role}
+Target duration: {target_seconds} seconds
+Operator-declared case nature: {case_nature}
+Pain point: {pain_point}
+
+Grounded claim handles:
+{claim_lines}
+
+Viewer DIY steps:
+{diy_lines}
+
+First populate story_spine from the supplied facts. Use null plus source_gaps for any absent initial assumption, stakes, recurring moment, or changed-workday evidence. Then create the smallest coherent beat plan.
+
+The finished plan must preserve one human subject from the opening pain through the turning insight and solution. It should explain what that person repeatedly had to do, why it failed or arrived too late, what we realized, what intelligence we inserted, what deterministic code did after that interpretation, what proof the viewer can observe, and what small version they could build.

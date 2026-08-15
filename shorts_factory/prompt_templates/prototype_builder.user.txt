@@ -1,0 +1,10 @@
+Episode brief:
+{brief_json}
+
+Approved screen-recording scenes:
+{screen_scenes_json}
+
+Whisper word timing for each screen scene:
+{screen_scene_timing_json}
+
+Build the files directly in the assigned prototype directory. Begin by making a scene-by-scene choreography map from spoken anchor -> exact local timestamp -> visual change -> data-testid, then implement those camera-ready states. The result must read as a polished portrait mobile product at 1080x1920, remain usable at 390x844, and prioritize what the audience will actually see in the reel over unrecorded application features.

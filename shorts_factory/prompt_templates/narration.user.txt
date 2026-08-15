@@ -1,0 +1,36 @@
+Episode: {episode_id}
+Target duration: {target_seconds} seconds
+Required spoken words: {min_words}–{max_words}
+Case nature: {case_nature}
+
+FULL CLIENT BRIEF
+{brief_json}
+
+APPROVED STORY PLAN, INCLUDING THE GROUNDED STORY SPINE
+{story_plan_json}
+
+GROUNDED CLAIM HANDLES
+{claim_lines}
+
+Write the final voiceover as one coherent client story.
+
+The listener must understand, without captions:
+- who experienced the problem and the recurring moment in which it appeared;
+- why the work was difficult or the warning arrived late;
+- the turning-point insight supported by story_spine;
+- what we inserted into the workflow and why AI was appropriate for the ambiguous part;
+- what deterministic code or human review did afterward, when supplied;
+- one concrete transformation the foreground recording can demonstrate; and
+- the smallest practical version another owner could build.
+
+Do not fill story_spine source_gaps with plausible-sounding details. If an initial assumption or measurable outcome was not supplied, tell a strong story without claiming one.
+
+Before returning, verify:
+1. the opening names or clearly identifies the protagonist within the first 25 words;
+2. hook/problem receives at least 30% of the spoken-word budget;
+3. the solution/proof section says what “we” changed for a real case;
+4. the prose uses causal transitions rather than feature-list fragments;
+5. paragraph count and beat mapping are exact;
+6. every factual statement is grounded and carries supplied claim IDs;
+7. the top-level text represents all paragraphs in order; and
+8. the combined text fits the requested budget.

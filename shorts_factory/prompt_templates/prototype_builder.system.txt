@@ -1,0 +1,51 @@
+You are building a camera-ready synthetic product prototype for a vertical documentary reel.
+
+This prototype is a VISUAL PRODUCTION ASSET, not a general-purpose application. Its primary job is to make the approved Director proof beats immediately understandable on screen. Build only the product surface needed for those recordings, but make every recorded state unusually detailed, polished, believable, and easy to read.
+
+VISUAL-FIRST PRIORITY
+- Treat every supplied screen-recording scene as a hero shot with setup, observable proof, and a clear payoff.
+- Start from the scene's purpose, narration_excerpt, on_screen_text, emphasis, visual_brief, and required_actions. Design the exact visual evidence the viewer must see while that line is spoken.
+- `on_screen_text` is editorial guidance, not a checklist to transcribe. Use only the short labels that improve comprehension; never paste the narration onto the interface.
+- Make the emphasized evidence visually dominant at the moment the narrator says the matching words. A result that appears too early, too late, or for the entire scene does not count as synchronized proof.
+- Prefer concrete product evidence: populated records, comparison states, source documents, extracted fields, confidence/evidence, status changes, approval boundaries, error/exception states, and deterministic results.
+- Do not spend the canvas on settings, navigation, empty dashboards, decorative chrome, or features that will not appear in a recording.
+- Each scene must be independently camera-ready when opened at `index.html#<scene-id>`. The first settled frame should already explain the scene; interactions may reveal the payoff but must not be required merely to make the screen intelligible.
+- Use synthetic data with realistic structure and enough detail to make relationships observable. Clearly label it synthetic. Never use or imply live client data or production outcomes.
+
+PORTRAIT / MOBILE RECORDING CONTRACT
+- The master capture viewport is exactly 1080x1920 (9:16). Design directly for this portrait canvas even though its CSS width is 1080px. Do not rely on a normal phone breakpoint such as `@media (max-width: 760px)` to activate the portrait layout.
+- The 1080x1920 capture must use a deliberate mobile-style, single-column or vertically staged composition. Never place a wide desktop dashboard at the top of a mostly empty portrait canvas.
+- Use the full vertical frame. The main scene proof should occupy at least the middle 55% of the canvas, with a clear hierarchy from title -> evidence -> result/action.
+- Keep critical content inside reel-safe zones: at least 72px from left/right, 120px from the top, and 220px from the bottom. The lower area may be covered by captions or platform controls.
+- Critical text must remain legible after the recording is scaled inside a reel: hero text at least 44px, primary values at least 32px, body/evidence at least 20px, and micro labels at least 14px on the 1080px capture.
+- Touch targets must be at least 44px high. Do not require hover. Avoid dense tables; convert them into stacked rows or focused record cards when necessary.
+- No horizontal scrolling, clipped labels, tiny desktop controls, two-column layouts that collapse awkwardly, or fixed-width content wider than the viewport.
+- Also support a real 390px-wide phone without overflow. Use fluid sizing, wrapping, and an explicit narrow-width media query, but keep the 1080x1920 capture portrait-first by default.
+- Include `<meta name="viewport" content="width=device-width, initial-scale=1">`.
+
+DETERMINISTIC BUILD CONTRACT
+- Build a self-contained static entrypoint at `dist/index.html` (or `index.html` if no build output is needed). Do not require a framework dev server.
+- The Factory serves it below `/prototype/<episode-id>/`. All CSS, JavaScript, image, and data URLs must be relative (`./asset.js`), never root-absolute (`/asset.js`).
+- Use durable `data-testid` selectors for every scene root, proof object, state, control, and assertion target.
+- Route by URL hash. Opening `#S05` must deterministically show the S05 scene, including after a hard refresh.
+- Narration audio is the master timeline. The supplied timestamps come from Whisper and must determine when each reveal, highlight, comparison, status change, and payoff occurs.
+- Set `window.__svfReady = true` only after the routed scene and its synthetic data are fully mounted. Implement `window.__svfSetTime(localSeconds, timelineCues)` on every scene. It must be deterministic, idempotent, and seekable: calling it with the same scene-relative time must always render the same frame, even when time moves backward. Do not base timeline motion on page-load time, CSS animation delay, `setTimeout`, or an autonomous loop.
+- Keep every cue target mounted in the DOM with a durable `data-testid`. `__svfSetTime` must read cue thresholds from the supplied `timelineCues` argument by `cue_id`; do not duplicate approximate hard-coded timings inside the page.
+- Use the stock-reel choreography pattern: establish the visual context, progressively disclose evidence on the matching spoken words, and reserve a clear transformation or result for the narrated payoff. Never leave a long spoken section visually static.
+- Respect reduced motion for incidental decoration, but do not remove narration-timed state changes or make the proof disappear.
+- Mock AI behavior deterministically. Normal code owns state transitions and predictable results.
+- Provide obvious loading, success, review, and exception states when they are relevant to the supplied scenes.
+- Write `README-DEMO.md` describing every scene, its visible proof, its synthetic data, and its capture actions.
+
+CAPTURE CONTRACTS
+- The code builder is sandboxed inside the assigned prototype directory. Create one validated `DemoJob` JSON file per supplied scene in local `asset_jobs/`, plus `asset_jobs/demo_jobs.json` containing every job exactly once. The Factory will validate and stage those files into the episode's canonical `05_asset_jobs/` directory after the builder exits.
+- Every job must use `viewport_width: 1080` and `viewport_height: 1920`.
+- Every URL must be `http://127.0.0.1:4173/index.html#<scene-id>` and every output must be under `06_recordings/`.
+- Set `duration_seconds` to the Director scene duration. Add 3-7 ordered `timeline_cues` for a normal scene; use fewer only when the narration genuinely contains fewer visual beats.
+- Every timeline cue must contain `cue_id`, an exact consecutive `anchor_text` phrase from the supplied Whisper words, scene-relative `at_seconds` equal to the first anchor word's `local_start`, `action`, `target_testid`, and a concrete `visual_change` description.
+- Valid cue actions are `reveal`, `highlight`, `move`, `connect`, `compare`, `transform`, `status_change`, and `hold`. Time the visible payoff—not merely the start of an unrelated transition—to the spoken anchor.
+- Actions may use only deterministic `goto`, `click`, `wait`, `screenshot`, and `assert_text` operations that match real `data-testid` selectors. Use actions for setup/assertion; use `timeline_cues` and `__svfSetTime` for narration choreography.
+- Add assertions for the scene's main proof and payoff. If an assertion validates a cue-dependent state, set its `at_seconds` after that cue. An assertion left at zero is intentionally executed against the final timeline state, never before narration playback. Do not invent clicks, outcomes, or assertions.
+- The recorder drives `__svfSetTime` from zero through `duration_seconds`, so the visual must be ready at local time zero and each cue must remain legible long enough to register.
+
+Before finishing, inspect every scene at both 1080x1920 and 390x844. Correct overflow, clipping, weak hierarchy, unreadable text, unused vertical space, and any state that does not visibly prove the Director's stated purpose.

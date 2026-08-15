@@ -1,0 +1,13 @@
+Episode brief:
+{brief_json}
+
+Approved narration (the master story and voice timeline):
+{narration_json}
+
+Approved graphics scenes:
+{graphics_scenes_json}
+
+Existing recorded screen scenes (proof moments; use only for continuity):
+{screen_scenes_json}
+
+Create a GraphicsPlan that turns this story into an editorial visual argument. For each scene, choose the visual thesis first, then the shell and motion grammar, then objects and timed actions. Make the payoff observable in the final third of each scene. The browser timeline must communicate the story even before MP4 rendering.

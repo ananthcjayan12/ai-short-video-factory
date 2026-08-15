@@ -8,22 +8,25 @@ from typing import Any
 
 from ..io import load_model, write_json
 from ..models import DirectorPlan, VoiceMetadata
+from ..node_runtime import node_environment
+from ..progress import emit
 from .composition import build
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
-def binary() -> list[str]:
+def binary(environment: dict[str, str] | None = None) -> list[str]:
+    environment = environment or node_environment()
     explicit = os.getenv("SVF_HYPERFRAMES_BIN", "").strip()
     if explicit:
         return [explicit]
-    global_bin = shutil.which("hyperframes")
-    if global_bin:
-        return [global_bin]
     local = PROJECT_ROOT / "node_modules/.bin/hyperframes"
     if local.exists():
         return [str(local)]
-    npx = shutil.which("npx")
+    global_bin = shutil.which("hyperframes", path=environment.get("PATH"))
+    if global_bin:
+        return [global_bin]
+    npx = shutil.which("npx", path=environment.get("PATH"))
     if npx:
         return [npx, "hyperframes"]
     raise RuntimeError("HyperFrames missing. Run npm install and npm run doctor.")
@@ -31,8 +34,9 @@ def binary() -> list[str]:
 
 def validate(project_dir: Path, *, preview: bool, width: int, height: int) -> dict[str, Any]:
     composition = build(project_dir, preview=preview, width=width, height=height)
-    result = subprocess.run([*binary(), "lint", ".", "--json"], cwd=composition.parent,
-                            capture_output=True, text=True, timeout=600)
+    environment = node_environment()
+    result = subprocess.run([*binary(environment), "lint", ".", "--json"], cwd=composition.parent,
+                            capture_output=True, text=True, timeout=600, env=environment)
     report = {"returncode": result.returncode, "stdout": result.stdout[-12000:], "stderr": result.stderr[-12000:]}
     if result.returncode != 0:
         raise RuntimeError(f"HyperFrames lint failed: {(result.stderr or result.stdout)[-4000:]}")
@@ -69,8 +73,9 @@ def _valid_video(path: Path) -> bool:
 
 
 def _render_one(composition: Path, output: Path) -> None:
-    result = subprocess.run([*binary(), "render", "-c", composition.name, "-o", str(output.resolve())],
-                            cwd=composition.parent, capture_output=True, text=True, timeout=14400)
+    environment = node_environment()
+    result = subprocess.run([*binary(environment), "render", "-c", composition.name, "-o", str(output.resolve())],
+                            cwd=composition.parent, capture_output=True, text=True, timeout=14400, env=environment)
     output.with_suffix(".render.log").write_text((result.stdout or "") + "\n" + (result.stderr or ""), encoding="utf-8")
     if result.returncode != 0 or not output.exists():
         raise RuntimeError(f"HyperFrames render failed: {(result.stderr or result.stdout)[-5000:]}")
@@ -94,6 +99,7 @@ def _concat(chunks: list[Path], output: Path) -> None:
 def render(project_dir: Path, *, preview: bool, width: int, height: int, output: Path) -> dict[str, Any]:
     plan = load_model(project_dir / "03_director/director_plan.approved.json", DirectorPlan)
     output.parent.mkdir(parents=True, exist_ok=True)
+    emit(5, "Validating the HyperFrames composition", task="composition_renderer")
     lint = validate(project_dir, preview=preview, width=width, height=height)
     (output.parent / "hyperframes-lint.log").write_text((lint.get("stdout") or "") + "\n" + (lint.get("stderr") or ""), encoding="utf-8")
     windows = chunk_windows(plan, float(os.getenv("SVF_HYPERFRAMES_CHUNK_SECONDS", "30")))
@@ -101,7 +107,9 @@ def render(project_dir: Path, *, preview: bool, width: int, height: int, output:
     chunk_root.mkdir(parents=True, exist_ok=True)
     chunks: list[Path] = []
     report_windows = []
+    total_windows = max(1, len(windows))
     for i, window in enumerate(windows, 1):
+        emit(10 + ((i - 1) / total_windows) * 70, f"Rendering chunk {i} of {len(windows)}", task="composition_renderer")
         chunk = chunk_root / f"part-{i:03d}.mp4"
         chunks.append(chunk)
         if _valid_video(chunk):
@@ -110,12 +118,14 @@ def render(project_dir: Path, *, preview: bool, width: int, height: int, output:
         composition = build(project_dir, preview=preview, width=width, height=height, window=window, composition_name=f"chunks/part-{i:03d}")
         _render_one(composition, chunk)
         report_windows.append({"index": i, "window": window, "status": "rendered", "path": str(chunk)})
+    emit(82, "Joining rendered chunks", task="composition_renderer")
     video_only = output.parent / f"{output.stem}.video.mp4"
     _concat(chunks, video_only)
 
     voice_meta = project_dir / "02_voice/voice.json"
     ffmpeg = shutil.which("ffmpeg")
     if voice_meta.exists() and ffmpeg:
+        emit(90, "Muxing the master voice timeline", task="composition_renderer")
         voice = load_model(voice_meta, VoiceMetadata)
         voice_path = project_dir / voice.audio_path
         r = subprocess.run([ffmpeg, "-y", "-i", str(video_only), "-i", str(voice_path), "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy", "-c:a", "aac", "-b:a", "192k", "-shortest", "-movflags", "+faststart", str(output)], capture_output=True, text=True, timeout=1800)
@@ -127,4 +137,5 @@ def render(project_dir: Path, *, preview: bool, width: int, height: int, output:
 
     report = {"renderer": "hyperframes", "output": str(output), "windows": report_windows}
     write_json(output.parent / "hyperframes-render-report.json", report)
+    emit(100, f"Render ready: {output.name}", task="composition_renderer")
     return report

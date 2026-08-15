@@ -1,0 +1,25 @@
+Episode brief:
+{brief_json}
+
+Approved story structure:
+{story_plan_json}
+
+Final narration:
+{narration_json}
+
+Master duration: {duration_seconds} seconds
+Canvas: 1080x1920 vertical
+
+Project talking-head policy: {talking_head_policy}
+
+Immutable production budgets (copy exactly into the response):
+{production_budgets_json}
+
+Validated paragraph/beat timing from Whisper:
+{audio_timing_json}
+
+Validated Whisper word timestamps:
+{word_timestamps_json}
+
+Available renderers: {available_renderers}.
+Create a precise scene timeline with purpose, narration excerpt, visual brief, renderer, on-screen text, and demo job ID where needed.
