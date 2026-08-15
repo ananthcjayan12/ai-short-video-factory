@@ -161,13 +161,15 @@ svf import-voice pain-102 /absolute/path/to/pain-102.wav
 
 ### Use a configured voice provider
 
-Route `voice_generator` to **ElevenLabs TTS** or **Gemini API + TTS**, then click **Generate voice** or use:
+Route `voice_generator` to **ElevenLabs TTS** or **Gemini API + TTS**, choose a voice in the same per-episode routing row, then click **Generate voice** or use:
 
 ```bash
 svf generate-voice pain-102
 ```
 
-The native adapter creates `02_voice/voice_master.wav`. Set credentials and voice defaults in `.env` (copied from `.env.example`). A custom audio CLI is still supported when its media command template creates the same WAV contract. Manual voice remains the safe default.
+The native adapter generates narration in paragraph-sized batches, validates each WAV for duration, loudness, clipping and format, and losslessly assembles them into `02_voice/voice_master.wav`. Valid batches are cached under `02_voice/audio_chunks/`, so a failed or interrupted run resumes without paying for already-approved speech. The validated `02_voice/audio_chunks/manifest.json` records the provider, model, voice, source text, cache key, quality result and exact master-timeline position for every batch.
+
+The voice selector exposes all 30 Gemini prebuilt voices. For ElevenLabs it loads every voice available to the configured account using API pagination. The chosen voice is saved with the episode instead of changing a project-wide default. Set credentials in `.env` (copied from `.env.example`); environment voice IDs remain CLI fallbacks. A custom audio CLI is still supported when its media command template creates the same WAV contract. Manual voice remains the safe default.
 
 ### Create a development timing track
 
@@ -270,7 +272,13 @@ A build is accepted only after deterministic checks confirm that:
 - the prototype has no horizontal overflow or clipped content at reel and phone sizes;
 - proof scenes occupy enough of the vertical frame and use legible text and touch targets.
 
-The browser QA seeks to scene start, every spoken cue, and scene end at both viewports. Its report is retained at `_requests/prototype_visual_qa.log`. If it fails, the build job reports the specific scene, cue, viewport, and layout problem rather than allowing a weak or unsynchronized prototype into recording.
+The browser QA seeks to scene start, every spoken cue, and scene end at both viewports. Its validated report is retained at `_requests/prototype_visual_qa.json` with the raw process log beside it. If static, DemoJob, or browser QA fails, the separately routed `prototype_repair` model receives only the measured evidence and current source inventory. It edits the existing prototype at the smallest useful scope, then the Factory reruns every deterministic check. Two attempts are allowed by default; unsuccessful repairs remain blocked.
+
+Each attempt archives the pre-repair source and records its prompt, provider log, validated findings, and before/after hashes under `_requests/prototype_repairs/`. To validate or repair an already-generated prototype without rebuilding it, click **Validate & repair** or run:
+
+```bash
+svf repair-prototype pain-102
+```
 
 The prototype is evidence for the video, not a fake production system. Never insert private customer data, invented outcomes, or unverified savings figures.
 
@@ -304,7 +312,7 @@ After screen recordings are attached, click **Generate graphics** or run:
 svf generate-graphics pain-102
 ```
 
-The graphics model outputs a validated data contract rather than HTML or edit code. Its editorial grammar uses semantic object types, causal connections, document annotation, kinetic type, object transformation, and continuity instead of reducing each scene to a generic card grid. Factory Desk then deterministically compiles:
+The graphics model outputs a validated data contract rather than HTML or edit code. Its editorial grammar uses semantic object types, free-form portrait frames, causal connections, spatial reveals, maps, evidence collage, kinetic type, object transformation, and continuity instead of reducing each scene to a generic card grid. Important actions quote an exact narration anchor and are snapped back to the master word timeline before rendering. Factory Desk then deterministically compiles:
 
 ```text
 08_graphics/graphics_plan.json
@@ -313,7 +321,9 @@ The graphics model outputs a validated data contract rather than HTML or edit co
 08_graphics/master.html
 ```
 
-This follows a semantic scene-outline and choreography workflow: each graphics scene declares a shell, motion grammar, layout variant, visible objects, timed actions, and continuity object. Open the graphics master to inspect only the designed scenes. The renderer applies the current project's visual theme; reference themes and assets are not copied.
+This follows the stock-Reel evidence workflow: each graphics scene declares one evolving visual world, opening and payoff states, an optional camera move, free-form object frames, narration-timed actions, a continuity object, and two or three stable review checkpoints. Every non-hold action is verified against an exact consecutive Whisper phrase and starts on the first output frame at or after that word. Scene boundaries are stored as contiguous integer frame windows so fractional-time rounding cannot accumulate. New episodes use 60 fps by default; 24, 30, and 60 fps remain valid per-episode formats.
+
+A hard storytelling gate rejects repeated shells, dashboard/card layouts, static reveal-only scenes, missing final-third payoffs, long unchanged sections, ungrounded narration anchors, and permanently overlapping visual states. After compilation, browser QA seeks every review checkpoint and action window to verify safe-stage containment, resolved object overlap, and observable motion before the timeline preview is accepted. One bounded AI re-plan is allowed. If the selected AI provider's usage limit is exhausted, the job stops before compiling any new graphics or preview and tells the operator to change the provider/model or replenish quota. Deterministic output runs only when the operator explicitly selects mock/offline generation. Open the graphics master to inspect only the designed scenes. The renderer applies the current project's visual theme; reference themes and assets are not copied.
 
 ## 10. QA, preview, and final render
 

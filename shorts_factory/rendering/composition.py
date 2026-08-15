@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import html
 import json
+import math
 import shutil
 from pathlib import Path
 from typing import Any
 
 from ..io import load_model, write_json
-from ..models import DirectorPlan, EpisodeBrief, GraphicsPlan, GraphicsScenePlan, VoiceMetadata
+from ..models import DirectorPlan, EpisodeBrief, GraphicsPlan, GraphicsScenePlan, GraphicsTheme, VoiceMetadata
 from .graphics import GRAPHICS_RUNTIME, GRAPHICS_STYLES, graphic_markup
 
 VIDEO_EXTENSIONS = {".mp4", ".mov", ".webm", ".m4v"}
@@ -24,16 +25,20 @@ def _link_or_copy(source: Path, destination: Path) -> None:
 
 def _visual_markup(
     scene: dict[str, Any], element_id: str, graphics_scene: GraphicsScenePlan | None = None,
+    graphics_theme: GraphicsTheme = "editorial",
 ) -> str:
     if graphics_scene:
         return graphic_markup(
             graphics_scene, element_id, start=float(scene["start"]), duration=float(scene["duration"]),
+            theme=graphics_theme,
         )
     scene_type = scene["type"]
+    track_start = float(scene["start"])
+    track_duration = float(scene.get("track_duration", scene["duration"]))
     title = html.escape(scene.get("purpose") or "")
     brief = html.escape(scene.get("visual_brief") or "")
     if scene_type == "motion_graphic" and scene["scene_id"] == "S02":
-        return f'''<section id="{element_id}" class="clip scene graphic" data-start="{scene['start']:.6f}" data-duration="{scene['duration']:.6f}" data-track-index="10">
+        return f'''<section id="{element_id}" class="clip scene graphic" data-start="{track_start:.9f}" data-duration="{track_duration:.9f}" data-track-index="10">
           <div class="eyebrow">ONE RECEIPT · THREE POSSIBLE JOBS</div>
           <div class="receipt-card">$483.67<br><span>Harbor Plumbing</span></div>
           <div class="branch-lines"><i></i><i></i><i></i></div>
@@ -41,38 +46,39 @@ def _visual_markup(
           <div class="big-question">?</div>
         </section>'''
     if scene_type == "diagram" and scene["scene_id"] == "S05":
-        return f'''<section id="{element_id}" class="clip scene diagram" data-start="{scene['start']:.6f}" data-duration="{scene['duration']:.6f}" data-track-index="10">
+        return f'''<section id="{element_id}" class="clip scene diagram" data-start="{track_start:.9f}" data-duration="{track_duration:.9f}" data-track-index="10">
           <div class="eyebrow">AI NEEDS BUSINESS CONTEXT</div>
           <div class="context-grid"><div>👷<b>Mike</b><span>crew member</span></div><div>📅<b>Riverside</b><span>today's schedule</span></div><div>🏪<b>Harbor</b><span>supplier history</span></div><div>🔧<b>Plumbing</b><span>items purchased</span></div></div>
           <div class="converge">↓</div><div class="confidence">94%<span>Riverside Villa</span></div>
         </section>'''
     if scene_type == "motion_graphic" and scene["scene_id"] == "S09":
-        return f'''<section id="{element_id}" class="clip scene graphic" data-start="{scene['start']:.6f}" data-duration="{scene['duration']:.6f}" data-track-index="10">
+        return f'''<section id="{element_id}" class="clip scene graphic" data-start="{track_start:.9f}" data-duration="{track_duration:.9f}" data-track-index="10">
           <div class="eyebrow">DIY PROTOTYPE</div><div class="stack"><div>WhatsApp / Telegram</div><b>→</b><div>n8n</div><b>→</b><div>Vision AI</div><b>→</b><div>Jobs Sheet</div></div>
           <div class="small-note">Start with sample data. Integrate the real systems only after you trust the decisions.</div>
         </section>'''
-    return f'''<section id="{element_id}" class="clip scene graphic" data-start="{scene['start']:.6f}" data-duration="{scene['duration']:.6f}" data-track-index="10"><div class="eyebrow">{html.escape(scene_type.replace('_',' ').upper())}</div><div class="generic-title">{title}</div><div class="generic-copy">{brief}</div></section>'''
+    return f'''<section id="{element_id}" class="clip scene graphic" data-start="{track_start:.9f}" data-duration="{track_duration:.9f}" data-track-index="10"><div class="eyebrow">{html.escape(scene_type.replace('_',' ').upper())}</div><div class="generic-title">{title}</div><div class="generic-copy">{brief}</div></section>'''
 
 
 def _scene_markup(
     scene: dict[str, Any], index: int, graphics_scene: GraphicsScenePlan | None = None,
+    graphics_theme: GraphicsTheme = "editorial",
 ) -> str:
     element_id = f"scene-{index:03d}"
     start = scene["start"]
-    duration = scene["duration"]
+    duration = scene.get("track_duration", scene["duration"])
     media_file = html.escape(scene.get("media_file") or "")
     if media_file:
         suffix = Path(media_file).suffix.lower()
         if suffix in VIDEO_EXTENSIONS:
             cls = "talking" if scene["type"] in {"talking_head", "cta"} else "screen"
-            return f'''<video id="{element_id}" class="clip scene media {cls}" src="assets/{media_file}" muted playsinline preload="auto" data-start="{start:.6f}" data-duration="{duration:.6f}" data-track-index="10" data-loop></video>'''
-        return f'''<section id="{element_id}" class="clip scene media" data-start="{start:.6f}" data-duration="{duration:.6f}" data-track-index="10"><img src="assets/{media_file}" alt="" /></section>'''
+            return f'''<video id="{element_id}" class="clip scene media {cls}" src="assets/{media_file}" muted playsinline preload="auto" data-start="{start:.9f}" data-duration="{duration:.9f}" data-track-index="10" data-loop></video>'''
+        return f'''<section id="{element_id}" class="clip scene media" data-start="{start:.9f}" data-duration="{duration:.9f}" data-track-index="10"><img src="assets/{media_file}" alt="" /></section>'''
     if scene["type"] in {"talking_head", "cta"}:
-        return f'''<section id="{element_id}" class="clip scene presenter-placeholder" data-start="{start:.6f}" data-duration="{duration:.6f}" data-track-index="10"><div class="silhouette">YOU</div><div class="presenter-note">Drop your real talking-head clip here<br><code>svf import-head ...</code></div></section>'''
-    return _visual_markup(scene, element_id, graphics_scene)
+        return f'''<section id="{element_id}" class="clip scene presenter-placeholder" data-start="{start:.9f}" data-duration="{duration:.9f}" data-track-index="10"><div class="silhouette">YOU</div><div class="presenter-note">Drop your real talking-head clip here<br><code>svf import-head ...</code></div></section>'''
+    return _visual_markup(scene, element_id, graphics_scene, graphics_theme)
 
 
-def build(project_dir: Path, *, preview: bool, width: int, height: int, fps: int = 30,
+def build(project_dir: Path, *, preview: bool, width: int, height: int, fps: int = 60,
           window: tuple[float, float] | None = None, composition_name: str | None = None) -> Path:
     brief = load_model(project_dir / "00_input/episode_brief.json", EpisodeBrief)
     plan = load_model(project_dir / "03_director/director_plan.approved.json", DirectorPlan)
@@ -91,6 +97,12 @@ def build(project_dir: Path, *, preview: bool, width: int, height: int, fps: int
     assets_dir = composition / "assets"
     assets_dir.mkdir(parents=True)
 
+    window_start_frame = round(window_start * fps)
+    window_end_frame = (
+        math.ceil(window_end * fps - 1e-9)
+        if abs(window_end - duration) <= 1e-6 else round(window_end * fps)
+    )
+    window_end_frame = max(window_start_frame + 1, window_end_frame)
     selected = [s for s in plan.scenes if s.end > window_start and s.start < window_end]
     entries: list[dict[str, Any]] = []
     for idx, scene in enumerate(selected, 1):
@@ -103,10 +115,21 @@ def build(project_dir: Path, *, preview: bool, width: int, height: int, fps: int
             if source.exists():
                 media_file = f"media-{idx:03d}{source.suffix.lower()}"
                 _link_or_copy(source, assets_dir / media_file)
+        absolute_start_frame = round(scene.start * fps)
+        absolute_end_frame = (
+            math.ceil(scene.end * fps - 1e-9)
+            if abs(scene.end - duration) <= 1e-6 else round(scene.end * fps)
+        )
+        absolute_end_frame = max(absolute_start_frame + 1, absolute_end_frame)
+        start_frame = absolute_start_frame - window_start_frame
+        end_frame = absolute_end_frame - window_start_frame
         item = scene.model_dump(mode="json")
         item.update({
-            "start": float(scene.start - window_start), "end": float(scene.end - window_start),
-            "duration": float(scene.end - scene.start), "media_file": media_file,
+            "start": start_frame / fps, "end": end_frame / fps,
+            "duration": (end_frame - start_frame) / fps, "media_file": media_file,
+            "track_duration": max(0.000001, (end_frame - start_frame) / fps - 0.0000001),
+            "render_start_frame": start_frame, "render_end_frame": end_frame,
+            "absolute_start_frame": absolute_start_frame, "absolute_end_frame": absolute_end_frame,
         })
         entries.append(item)
 
@@ -121,8 +144,11 @@ def build(project_dir: Path, *, preview: bool, width: int, height: int, fps: int
 
     manifest = {
         "episode_id": brief.episode_id, "title": brief.title, "width": width, "height": height,
-        "fps": fps, "duration": float(window_end - window_start), "timeline_offset": window_start,
+        "fps": fps, "duration": (window_end_frame - window_start_frame) / fps,
+        "duration_frames": window_end_frame - window_start_frame,
+        "timeline_offset": window_start_frame / fps, "timeline_offset_frame": window_start_frame,
         "source_duration": duration, "entries": entries, "voice_file": voice_file, "preview": preview,
+        "graphics_theme": graphics.theme if graphics else brief.graphics_theme,
         "graphics_scenes": {
             scene_id: value.model_dump(mode="json") for scene_id, value in graphics_by_scene.items()
         },
@@ -138,7 +164,10 @@ def _html(manifest: dict[str, Any]) -> str:
         for scene_id, value in manifest.get("graphics_scenes", {}).items()
     }
     entries_markup = "\n".join(
-        _scene_markup(item, i, graphics_by_scene.get(item["scene_id"]))
+        _scene_markup(
+            item, i, graphics_by_scene.get(item["scene_id"]),
+            manifest.get("graphics_theme", "editorial"),
+        )
         for i, item in enumerate(manifest["entries"], 1)
     )
     entries_json = json.dumps([
@@ -167,7 +196,7 @@ __GRAPHICS_STYLES__
 <div id="stage" data-composition-id="ai-short" data-no-timeline data-start="0" data-duration="__DURATION__" data-width="__WIDTH__" data-height="__HEIGHT__" data-fps="__FPS__">
 __ENTRIES__<div id="grain"></div><div id="brand">AI WORKFLOW CASE STUDY</div><div id="caption"></div></div>
 __AUDIO__
-<div id="timeline-controls"><div class="control-row"><button id="timeline-toggle" type="button">Play</button><button id="timeline-restart" type="button">Restart</button><input id="timeline-seek" type="range" min="0" max="__DURATION__" step="0.01" value="0"><span id="timeline-time">0.0 / __DURATION_SHORT__s</span><button id="timeline-mute" type="button">Mute</button></div><div id="scene-rail" class="scene-rail"></div></div>
+  <div id="timeline-controls"><div class="control-row"><button id="timeline-toggle" type="button">Play</button><button id="timeline-restart" type="button">Restart</button><input id="timeline-seek" type="range" min="0" max="__DURATION__" step="__FRAME_SECONDS__" value="0"><span id="timeline-time">0.0 / __DURATION_SHORT__s</span><button id="timeline-mute" type="button">Mute</button></div><div id="scene-rail" class="scene-rail"></div></div>
 <script>
 __GRAPHICS_RUNTIME__
 const ENTRIES=__ENTRIES_JSON__,DURATION=__DURATION__;const stage=document.getElementById('stage'),caption=document.getElementById('caption'),audio=document.getElementById('master-audio'),seek=document.getElementById('timeline-seek'),timeLabel=document.getElementById('timeline-time'),toggle=document.getElementById('timeline-toggle'),rail=document.getElementById('scene-rail');const clamp=(v,a=0,b=1)=>Math.max(a,Math.min(b,v));const ease=v=>1-Math.pow(1-clamp(v),3);let currentTime=0,playing=false;
@@ -177,12 +206,14 @@ function renderAt(t){currentTime=clamp(Number(t)||0,0,DURATION);let activeCaptio
 function setPlaying(next){playing=Boolean(next&&audio);toggle.textContent=playing?'Pause':'Play';if(audio){if(playing){audio.currentTime=currentTime;audio.play().catch(()=>{playing=false;toggle.textContent='Play';});}else audio.pause();}}
 toggle.addEventListener('click',()=>setPlaying(!playing));document.getElementById('timeline-restart').addEventListener('click',()=>{renderAt(0);if(audio)audio.currentTime=0;setPlaying(true);});seek.addEventListener('input',()=>{setPlaying(false);renderAt(seek.value);if(audio)audio.currentTime=currentTime;});document.getElementById('timeline-mute').addEventListener('click',event=>{if(!audio)return;audio.muted=!audio.muted;event.currentTarget.textContent=audio.muted?'Unmute':'Mute';});
 for(const item of ENTRIES){const button=document.createElement('button');button.type='button';button.className='scene-jump';button.style.flexGrow=String(Math.max(.1,item.end-item.start));button.dataset.type=item.type;button.dataset.label=`${item.scene_id} · ${item.purpose}`;button.title=button.dataset.label;button.addEventListener('click',()=>{setPlaying(false);renderAt(Math.min(item.end-.01,item.start+.35));if(audio)audio.currentTime=currentTime;});rail.appendChild(button);}
-audio?.addEventListener('timeupdate',()=>{if(!audio.paused)renderAt(audio.currentTime);});audio?.addEventListener('ended',()=>{playing=false;toggle.textContent='Play';renderAt(DURATION);});
-window.addEventListener('hf-seek',event=>{setPlaying(false);renderAt(Number(event.detail.time||0));});renderAt(0);window.__hf_ready__=true;
+  const schedulePreviewFrame=renderMode?null:window['requestAnimation'+'Frame']?.bind(window);function playbackFrame(){if(playing&&audio&&!audio.paused)renderAt(audio.currentTime);schedulePreviewFrame?.(playbackFrame);}schedulePreviewFrame?.(playbackFrame);
+  audio?.addEventListener('timeupdate',()=>{if(!audio.paused)renderAt(audio.currentTime);});audio?.addEventListener('ended',()=>{playing=false;toggle.textContent='Play';renderAt(DURATION);});
+  window.__svfRenderAt=renderAt;window.addEventListener('hf-seek',event=>{setPlaying(false);renderAt(Number(event.detail.time||0));});renderAt(0);window.__hf_ready__=true;
 </script></body></html>'''
     for key, value in {
         "__WIDTH__": str(manifest["width"]), "__HEIGHT__": str(manifest["height"]),
         "__DURATION__": f"{manifest['duration']:.6f}", "__FPS__": str(manifest["fps"]),
+        "__FRAME_SECONDS__": f"{1 / manifest['fps']:.6f}",
         "__DURATION_SHORT__": f"{manifest['duration']:.1f}", "__AUDIO__": audio_markup,
         "__ENTRIES__": entries_markup, "__ENTRIES_JSON__": entries_json,
         "__GRAPHICS_STYLES__": GRAPHICS_STYLES, "__GRAPHICS_RUNTIME__": GRAPHICS_RUNTIME,

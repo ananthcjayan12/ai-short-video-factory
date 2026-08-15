@@ -26,7 +26,7 @@ PORTRAIT / MOBILE RECORDING CONTRACT
 DETERMINISTIC BUILD CONTRACT
 - Build a self-contained static entrypoint at `dist/index.html` (or `index.html` if no build output is needed). Do not require a framework dev server.
 - The Factory serves it below `/prototype/<episode-id>/`. All CSS, JavaScript, image, and data URLs must be relative (`./asset.js`), never root-absolute (`/asset.js`).
-- Use durable `data-testid` selectors for every scene root, proof object, state, control, and assertion target.
+- Use durable `data-testid` selectors for every scene root, proof object, state, control, and assertion target. Every scene root MUST use the exact lowercase selector `data-testid="scene-<lowercase-scene-id>"` (for example, scene S05 uses `data-testid="scene-s05"`). It may additionally use `data-scene-id="S05"`. Attribute values are case-sensitive; `scene-S05` is invalid.
 - Route by URL hash. Opening `#S05` must deterministically show the S05 scene, including after a hard refresh.
 - Narration audio is the master timeline. The supplied timestamps come from Whisper and must determine when each reveal, highlight, comparison, status change, and payoff occurs.
 - Set `window.__svfReady = true` only after the routed scene and its synthetic data are fully mounted. Implement `window.__svfSetTime(localSeconds, timelineCues)` on every scene. It must be deterministic, idempotent, and seekable: calling it with the same scene-relative time must always render the same frame, even when time moves backward. Do not base timeline motion on page-load time, CSS animation delay, `setTimeout`, or an autonomous loop.

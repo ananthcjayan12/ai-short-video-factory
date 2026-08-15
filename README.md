@@ -92,7 +92,7 @@ Then open [http://127.0.0.1:8787](http://127.0.0.1:8787). From the desk you can:
 - create and switch between episode workspaces;
 - generate narration and voice timing tracks;
 - review and explicitly approve Director plans;
-- build portrait-first prototypes whose visual reveals follow Whisper word timestamps, run cue-by-cue reel/phone QA, record deterministic demos and attach presenter clips;
+- build portrait-first prototypes whose visual reveals follow Whisper word timestamps, automatically repair measured contract/layout failures with a separately routed code model, run cue-by-cue reel/phone QA, record deterministic demos and attach presenter clips;
 - build and scrub the complete browser timeline before rendering, then run QA, render previews/finals and explicitly approve the final video;
 - inspect provider readiness and queued production work;
 - route every task to a compatible provider/model per episode;
@@ -249,7 +249,7 @@ This is intentionally deterministic: the same demo can be recorded again without
 
 ## HyperFrames contract
 
-Before rendering, the graphics builder creates a validated editorial scene/object/action plan plus individual inspectable scene HTML files and a master graphics preview under `08_graphics/`. The composition compiler then creates a complete, voice-timed interactive preview under `09_composition/preview/`; run `svf prepare-preview <episode-id>` to refresh it without rendering an MP4. Every scene is a `.clip` with `data-start` and `data-duration`. The page listens to `hf-seek` and recomputes scene state from the render clock, so browser preview and frame rendering use the same timeline semantics.
+Before rendering, the graphics builder creates a validated editorial scene/object/action plan plus individual inspectable scene HTML files and a master graphics preview under `08_graphics/`. Graphics use free-form portrait staging, evolving visual worlds, maps/evidence/metaphor/data primitives, narration-anchored actions, review checkpoints, and a bounded anti-template quality repair. The composition compiler then creates a complete, voice-timed interactive preview under `09_composition/preview/`; run `svf prepare-preview <episode-id>` to refresh it without rendering an MP4. Every scene is a `.clip` with `data-start` and `data-duration`. The page listens to `hf-seek` and recomputes scene state from the render clock, so browser preview and frame rendering use the same timeline semantics.
 
 ## Talking head / InfiniteTalk
 

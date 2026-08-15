@@ -120,6 +120,7 @@ TASKS = [
     {"id": "director", "capability": "structured", "group": "Direction"},
     {"id": "director_qa", "capability": "structured", "group": "Direction"},
     {"id": "prototype_builder", "capability": "code", "group": "Assets"},
+    {"id": "prototype_repair", "capability": "code", "group": "Assets"},
     {"id": "screen_recorder", "capability": "browser", "group": "Assets"},
     {"id": "talking_head_generator", "capability": "talking_head", "group": "Assets"},
     {"id": "graphics_builder", "capability": "structured", "group": "Assets"},
@@ -144,9 +145,13 @@ DEFAULT_ROUTES = {
     "director": route("claude_code", "claude-sonnet-5", fallback_provider="codex", fallback_model="gpt-5.6-sol"),
     "director_qa": route("codex", "gpt-5.6-sol", fallback_provider="claude_code", fallback_model="claude-sonnet-5"),
     "prototype_builder": route("codex", "gpt-5.6-sol", timeout=1800, fallback_provider="claude_code", fallback_model="claude-sonnet-5"),
+    "prototype_repair": route("codex", "gpt-5.6-sol", retries=0, timeout=1200, fallback_provider="claude_code", fallback_model="claude-sonnet-5"),
     "screen_recorder": route("playwright", "Chromium", retries=1, timeout=600, fallback_provider="mock"),
     "talking_head_generator": route("manual_talking_head", "real camera", retries=0, timeout=0, fallback_provider="mock"),
-    "graphics_builder": route("codex", "gpt-5.6-terra", fallback_provider="mock"),
+    "graphics_builder": {
+        **route("codex", "gpt-5.6-sol", retries=0, fallback_provider="", fallback_model=""),
+        "reasoning_effort": "medium",
+    },
     "composition_renderer": route("hyperframes", "0.7.62", timeout=14400, fallback_provider="ffmpeg", fallback_model="local"),
     "final_qc": route("codex", "gpt-5.6-sol", fallback_provider="claude_code", fallback_model="claude-sonnet-5"),
 }
@@ -214,7 +219,7 @@ def resolve_task(config: dict[str, Any], task_id: str) -> dict[str, Any]:
         "provider_adapter": provider["adapter"],
         "command_template": override.get("command_template") or provider.get("command_template", ""),
         "media_command_template": override.get("media_command_template") or provider.get("media_command_template", ""),
-        "voice_id": override.get("voice_id") or provider.get("voice_id", ""),
+        "voice_id": route_cfg.get("voice_id") or override.get("voice_id") or provider.get("voice_id", ""),
         "reasoning_efforts": provider.get("reasoning_efforts", []),
     })
     return route_cfg

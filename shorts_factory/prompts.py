@@ -13,6 +13,8 @@ def claim_handles(brief: EpisodeBrief) -> list[tuple[str, str]]:
     claims = [("pain-01", brief.pain_point)]
     claims.extend((f"backend-{index:02d}", value) for index, value in enumerate(brief.backend_summary, 1))
     claims.extend((f"diy-{index:02d}", value) for index, value in enumerate(brief.viewer_diy, 1))
+    if brief.source_narration:
+        claims.append(("source-narration-01", brief.source_narration))
     return claims
 
 
@@ -149,17 +151,32 @@ def prototype_builder_prompt(
     return f"{bundle.system}\n\n# BUILD INPUT\n{bundle.user}"
 
 
+def prototype_repair_prompt(
+    *, episode_id: str, attempt: int, max_attempts: int,
+    issues: list[dict], source_inventory: list[dict],
+) -> str:
+    bundle = build_prompt(
+        "prototype_repair", episode_id=episode_id, attempt=attempt, max_attempts=max_attempts,
+        issues_json=json.dumps(issues, indent=2),
+        source_inventory_json=json.dumps(source_inventory, indent=2),
+    )
+    return f"{bundle.system}\n\n# REPAIR INPUT\n{bundle.user}"
+
+
 def graphics_builder_prompt(
     brief: EpisodeBrief,
     narration: Narration,
     graphics_scenes: list[dict],
     screen_scenes: list[dict],
+    words: WordTimestampBundle | None = None,
 ) -> str:
     bundle = build_prompt(
         "graphics_builder",
+        graphics_theme=brief.graphics_theme,
         brief_json=json.dumps(brief.model_dump(mode="json"), indent=2),
         narration_json=json.dumps(narration.model_dump(mode="json"), indent=2),
         graphics_scenes_json=json.dumps(graphics_scenes, indent=2),
+        graphics_scene_timing_json=json.dumps(_screen_scene_timing(graphics_scenes, words), indent=2),
         screen_scenes_json=json.dumps(screen_scenes, indent=2),
     )
     return f"{bundle.system}\n\n# GRAPHICS INPUT\n{bundle.user}"

@@ -37,6 +37,13 @@ def test_factory_desk_create_and_run_validated_job(tmp_path, monkeypatch):
     assert dashboard.json()["settings"]["include_talking_head"] is True
     assert all(action["capability"] for action in dashboard.json()["actions"])
 
+    graphics_theme = client.put(
+        "/api/episodes/pain-ui/graphics-theme", json={"graphics_theme": "whiteboard"},
+    )
+    assert graphics_theme.status_code == 200
+    assert graphics_theme.json()["brief"]["graphics_theme"] == "whiteboard"
+    assert client.get("/api/episodes/pain-ui").json()["brief"]["graphics_theme"] == "whiteboard"
+
     settings = client.put("/api/project/settings", json={"include_talking_head": False})
     assert settings.status_code == 200
     assert settings.json()["include_talking_head"] is False
@@ -79,10 +86,15 @@ def test_factory_desk_create_and_run_validated_job(tmp_path, monkeypatch):
 
     voice_map = client.put(
         "/api/episodes/pain-ui/models",
-        json={"tasks": {"voice_generator": {"provider": "elevenlabs", "model": "eleven_v3"}}},
+        json={"tasks": {"voice_generator": {"provider": "elevenlabs", "model": "eleven_v3", "voice_id": "voice-123"}}},
     )
     assert voice_map.status_code == 200
     assert voice_map.json()["tasks"]["voice_generator"]["provider"] == "elevenlabs"
+    assert voice_map.json()["tasks"]["voice_generator"]["voice_id"] == "voice-123"
+
+    gemini_voices = client.get("/api/tts/voices/gemini")
+    assert gemini_voices.status_code == 200
+    assert len(gemini_voices.json()["voices"]) == 30
 
     invalid_map = client.put(
         "/api/episodes/pain-ui/models",

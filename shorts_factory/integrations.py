@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import wave
 from dataclasses import dataclass, field
@@ -16,12 +17,26 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from .models import TTSVoiceOption
+
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 NATIVE_STRUCTURED_PROVIDERS = {
     "anthropic", "antigravity", "claude_code", "codex", "copilot", "gemini", "grok", "moonshot", "zai",
 }
 GEMINI_MIN_TIMEOUT_SECONDS = 10
+GEMINI_TTS_VOICES: tuple[tuple[str, str], ...] = (
+    ("Zephyr", "Bright"), ("Puck", "Upbeat"), ("Charon", "Informative"),
+    ("Kore", "Firm"), ("Fenrir", "Excitable"), ("Leda", "Youthful"),
+    ("Orus", "Firm"), ("Aoede", "Breezy"), ("Callirrhoe", "Easy-going"),
+    ("Autonoe", "Bright"), ("Enceladus", "Breathy"), ("Iapetus", "Clear"),
+    ("Umbriel", "Easy-going"), ("Algieba", "Smooth"), ("Despina", "Smooth"),
+    ("Erinome", "Clear"), ("Algenib", "Gravelly"), ("Rasalgethi", "Informative"),
+    ("Laomedeia", "Upbeat"), ("Achernar", "Soft"), ("Alnilam", "Firm"),
+    ("Schedar", "Even"), ("Gacrux", "Mature"), ("Pulcherrima", "Forward"),
+    ("Achird", "Friendly"), ("Zubenelgenubi", "Casual"), ("Vindemiatrix", "Gentle"),
+    ("Sadachbia", "Lively"), ("Sadaltager", "Knowledgeable"), ("Sulafat", "Warm"),
+)
 
 
 @dataclass(frozen=True)
@@ -44,12 +59,73 @@ class ElevenLabsTTSResponse(BaseModel):
     normalized_alignment: CharacterAlignment | None = None
 
 
+class ElevenLabsVoice(BaseModel):
+    voice_id: str
+    name: str
+    description: str | None = None
+    category: str | None = None
+
+
+class ElevenLabsVoicePage(BaseModel):
+    voices: list[ElevenLabsVoice] = Field(default_factory=list)
+    has_more: bool = False
+    next_page_token: str | None = None
+
+
 class TTSResult(BaseModel):
     provider: str
     model: str
     voice_id: str
     audio_path: str
     alignment_path: str | None = None
+
+
+def list_tts_voices(provider: str, *, timeout: int = 30) -> list[TTSVoiceOption]:
+    """Return every selectable voice exposed by a native TTS provider."""
+    if provider == "gemini":
+        return [
+            TTSVoiceOption(voice_id=name, name=name, description=description, category="prebuilt")
+            for name, description in GEMINI_TTS_VOICES
+        ]
+    if provider != "elevenlabs":
+        return []
+
+    load_env()
+    api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("XI_API_KEY")
+    if not api_key:
+        raise RuntimeError("ElevenLabs voice discovery requires ELEVENLABS_API_KEY or XI_API_KEY")
+    voices: list[TTSVoiceOption] = []
+    seen: set[str] = set()
+    next_page_token: str | None = None
+    for _ in range(100):
+        query: dict[str, str] = {
+            "page_size": "100", "include_total_count": "false", "sort": "name", "sort_direction": "asc",
+        }
+        if next_page_token:
+            query["next_page_token"] = next_page_token
+        request = urllib.request.Request(
+            "https://api.elevenlabs.io/v2/voices?" + urllib.parse.urlencode(query),
+            headers={"xi-api-key": api_key, "accept": "application/json"},
+        )
+        page = ElevenLabsVoicePage.model_validate(
+            _request_json(request, provider="elevenlabs", timeout=timeout),
+        )
+        for voice in page.voices:
+            if voice.voice_id in seen:
+                continue
+            seen.add(voice.voice_id)
+            voices.append(TTSVoiceOption(
+                voice_id=voice.voice_id, name=voice.name,
+                description=voice.description, category=voice.category,
+            ))
+        if not page.has_more:
+            break
+        if not page.next_page_token or page.next_page_token == next_page_token:
+            raise RuntimeError("ElevenLabs voice pagination did not provide a usable next_page_token")
+        next_page_token = page.next_page_token
+    else:
+        raise RuntimeError("ElevenLabs voice discovery exceeded 100 pages")
+    return voices
 
 
 def load_env() -> None:
@@ -63,6 +139,19 @@ def load_env() -> None:
                 continue
             key, value = line.split("=", 1)
             os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def provider_environment() -> dict[str, str]:
+    """Return a provider subprocess environment without stale Codex login state."""
+    environment = os.environ.copy()
+    codex_home = environment.get("CODEX_HOME", "").strip()
+    if codex_home and not Path(codex_home).expanduser().is_dir():
+        # Account switching can temporarily point CODEX_HOME at an ephemeral
+        # login directory. Once that directory is removed, Codex refuses to
+        # start. Omitting only the invalid override restores its normal,
+        # persistent account/config directory.
+        environment.pop("CODEX_HOME", None)
+    return environment
 
 
 def _strict_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -108,6 +197,7 @@ def _run(
     try:
         return subprocess.run(
             command, input=prompt, cwd=cwd, capture_output=True, text=True, timeout=timeout,
+            env=provider_environment(),
         )
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"Provider command timed out after {timeout} seconds") from exc
@@ -396,7 +486,7 @@ def _generate_elevenlabs(text: str, model: str, voice_id: str, output: Path, tim
     load_env()
     api_key = os.getenv("ELEVENLABS_API_KEY") or os.getenv("XI_API_KEY")
     if not api_key or not voice_id:
-        raise RuntimeError("ElevenLabs requires ELEVENLABS_API_KEY and ELEVENLABS_VOICE_ID")
+        raise RuntimeError("ElevenLabs requires an API key and a selected voice ID")
     request = urllib.request.Request(
         f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}/with-timestamps?output_format=mp3_44100_128",
         data=json.dumps({

@@ -6,6 +6,7 @@
     <meta name="theme-color" content="#111316" />
     <title>Factory Desk — AI Short Video Factory</title>
     <meta name="description" content="Local production desk for narration-first short video projects." />
+    <link rel="icon" href="data:," />
     <link rel="stylesheet" href="/static/styles.css" />
   </head>
   <body>
@@ -23,11 +24,23 @@
           <span aria-hidden="true">＋</span> New episode
         </button>
 
-        <div class="nav-heading">
-          <span>Episodes</span>
-          <span id="episode-count" class="count-badge">0</span>
+        <div class="sidebar-navigation">
+          <div class="nav-heading">
+            <span>Episodes</span>
+            <span id="episode-count" class="count-badge">0</span>
+          </div>
+          <nav id="episode-list" class="episode-list" aria-live="polite"></nav>
+
+          <div class="nav-heading filled-heading">
+            <span>Filled Episodes</span>
+            <span id="filled-episode-count" class="count-badge">0</span>
+          </div>
+          <div class="filled-library-tools">
+            <input id="filled-episode-search" type="search" placeholder="Search 100 stories" aria-label="Search filled episodes" />
+            <button id="import-filled-episodes" class="sidebar-action" type="button">Add all</button>
+          </div>
+          <nav id="filled-episode-list" class="filled-episode-list" aria-live="polite"></nav>
         </div>
-        <nav id="episode-list" class="episode-list" aria-live="polite"></nav>
 
         <div class="sidebar-foot">
           <div class="local-chip"><i></i> Local workspace</div>
@@ -110,7 +123,8 @@
           </label>
           <label>
             <span>Target length</span>
-            <div class="input-suffix"><input name="target_seconds" type="number" min="15" max="180" value="58" /><b>sec</b></div>
+            <div class="input-suffix"><input name="target_seconds" type="number" min="15" max="480" value="58" /><b>sec</b></div>
+            <small>From 15 seconds up to 8 minutes.</small>
           </label>
           <label class="form-wide">
             <span>Backend facts <em>optional, one per line</em></span>

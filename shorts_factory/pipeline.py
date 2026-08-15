@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import math
 import os
 import re
 import select
@@ -19,10 +22,11 @@ from .director import (
     validate_presenter_policy,
 )
 from .io import atomic_write_text, load_model, read_json, write_json
-from .integrations import NATIVE_STRUCTURED_PROVIDERS, generate_tts
+from .integrations import NATIVE_STRUCTURED_PROVIDERS, provider_environment
 from .models import (
     AudioTiming, DemoAction, DemoJob, DemoJobBundle, DirectorPlan, EpisodeBrief, EpisodeStage, Narration, StoryPlan,
-    GraphicsAction, GraphicsObject, GraphicsPlan, GraphicsScenePlan, VoiceMetadata, WordTimestampBundle,
+    GraphicsAction, GraphicsFrame, GraphicsObject, GraphicsPlan, GraphicsScenePlan, GraphicsTheme, GraphicsVisualReport, PrototypeRepairAttempt,
+    PrototypeRepairIssue, PrototypeRepairReport, PrototypeVisualReport, VoiceMetadata, WordTimestampBundle,
 )
 from .node_runtime import node_binary
 from .orchestrator import PROVIDERS, default_config, resolve_task
@@ -30,12 +34,13 @@ from .project import ProjectStore
 from .progress import emit
 from .prompts import (
     claim_handles, director_prompt, graphics_builder_prompt, narration_prompt, narration_rewrite_prompt,
-    prototype_builder_prompt, story_structure_prompt,
+    prototype_builder_prompt, prototype_repair_prompt, story_structure_prompt,
 )
 from .rendering.graphics import write_graphics_package
 from .rendering.composition import build as build_composition
 from .rendering.hyperframes import render as render_hyperframes
 from .timing import align_words_to_narration, audio_sha256, transcribe_with_whisper
+from .voice_batches import generate_batched_voice
 from .story_quality import assess_narration
 
 
@@ -489,7 +494,13 @@ def _cue_tokens(value: str) -> list[str]:
     return re.findall(r"[a-z0-9]+", value.casefold())
 
 
-def _cue_anchor_start(anchor_text: str, scene: Any, words: WordTimestampBundle) -> float | None:
+def _cue_anchor_start(
+    anchor_text: str,
+    scene: Any,
+    words: WordTimestampBundle,
+    *,
+    occurrence: int = 0,
+) -> float | None:
     anchor = _cue_tokens(anchor_text)
     if not anchor:
         return None
@@ -500,10 +511,12 @@ def _cue_anchor_start(anchor_text: str, scene: Any, words: WordTimestampBundle) 
         for token in _cue_tokens(word.word):
             tokens.append(token)
             starts.append(word.start)
-    for index in range(0, len(tokens) - len(anchor) + 1):
-        if tokens[index:index + len(anchor)] == anchor:
-            return max(0.0, starts[index] - scene.start)
-    return None
+    matches = [
+        max(0.0, starts[index] - scene.start)
+        for index in range(0, len(tokens) - len(anchor) + 1)
+        if tokens[index:index + len(anchor)] == anchor
+    ]
+    return matches[occurrence] if occurrence < len(matches) else None
 
 
 def _validate_demo_job(
@@ -614,6 +627,7 @@ def run_prototype_builder(store: ProjectStore, episode_id: str) -> Path:
     route = resolve_task(config, "prototype_builder")
     provider = route["provider"]
     model = route["model"]
+    stdin_handle = None
     if provider == "codex":
         cmd = f"codex exec --skip-git-repo-check --model {shlex_quote(model)} - < {shlex_quote(str(prompt))}"
     elif provider == "claude_code":
@@ -626,7 +640,7 @@ def run_prototype_builder(store: ProjectStore, episode_id: str) -> Path:
     emit(10, f"Starting {provider} prototype builder", task="prototype_builder")
     process = subprocess.Popen(
         cmd, shell=True, cwd=out_dir, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-        text=True, bufsize=1,
+        text=True, bufsize=1, env=provider_environment(),
     )
     output: list[str] = []
     started = time.monotonic()
@@ -669,13 +683,8 @@ def run_prototype_builder(store: ProjectStore, episode_id: str) -> Path:
     atomic_write_text(project / "_requests/prototype_builder.log", log_text)
     if returncode != 0:
         raise RuntimeError(f"Prototype builder failed: {log_text[-4000:]}")
-    plan = load_model(project / "03_director/director_plan.approved.json", DirectorPlan)
-    screen_scenes = [scene for scene in plan.scenes if scene.type == "screen_recording" and scene.renderer == "playwright"]
-    entrypoint = _validate_static_prototype(out_dir, screen_scenes=screen_scenes)
-    _stage_builder_demo_jobs(project, out_dir)
-    ensure_demo_jobs(store, episode_id)
-    emit(90, "Checking every prototype proof scene at reel and phone sizes", task="prototype_builder")
-    _validate_prototype_visuals(project, entrypoint, [scene.scene_id for scene in screen_scenes])
+    emit(88, "Validating the prototype and repairing measured failures when needed", task="prototype_builder")
+    repair_prototype(store, episode_id)
     emit(100, "Prototype builder completed", task="prototype_builder")
     return out_dir
 
@@ -699,6 +708,230 @@ def _prototype_activity(out_dir: Path) -> tuple[float, int, str | None]:
                 newest_mtime = stamp
                 newest_path = path.relative_to(out_dir).as_posix()
     return newest_mtime, file_count, newest_path
+
+
+class PrototypeVisualValidationError(RuntimeError):
+    def __init__(self, report: PrototypeVisualReport):
+        super().__init__("Prototype browser visual QA failed")
+        self.report = report
+
+
+def _prototype_source_inventory(out_dir: Path) -> list[dict[str, Any]]:
+    ignored = {".git", ".next", ".venv", "node_modules", "__pycache__", "dist", "build", "output"}
+    inventory: list[dict[str, Any]] = []
+    for parent, folders, files in os.walk(out_dir):
+        folders[:] = sorted(folder for folder in folders if folder not in ignored)
+        for name in sorted(files):
+            path = Path(parent) / name
+            if path.suffix.lower() not in {".html", ".css", ".js", ".mjs", ".cjs", ".json", ".md", ".csv"}:
+                continue
+            data = path.read_bytes()
+            inventory.append({
+                "path": path.relative_to(out_dir).as_posix(),
+                "sha256": hashlib.sha256(data).hexdigest(), "bytes": len(data),
+            })
+    return inventory
+
+
+def _prototype_inventory_hash(inventory: list[dict[str, Any]]) -> str:
+    payload = json.dumps(inventory, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _archive_prototype_sources(out_dir: Path, destination: Path, inventory: list[dict[str, Any]]) -> None:
+    for item in inventory:
+        source = out_dir / item["path"]
+        target = destination / item["path"]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+
+
+def _prototype_validation_issues(
+    store: ProjectStore, episode_id: str,
+) -> tuple[Path | None, list[PrototypeRepairIssue]]:
+    project = store.project_dir(episode_id)
+    out_dir = project / "04_prototype"
+    plan = load_model(project / "03_director/director_plan.approved.json", DirectorPlan)
+    screen_scenes = [
+        scene for scene in plan.scenes
+        if scene.type == "screen_recording" and scene.renderer == "playwright"
+    ]
+    try:
+        entrypoint = _validate_static_prototype(out_dir, screen_scenes=screen_scenes)
+    except Exception as exc:
+        return None, [PrototypeRepairIssue(stage="static_contract", message=str(exc))]
+    try:
+        _stage_builder_demo_jobs(project, out_dir)
+        ensure_demo_jobs(store, episode_id)
+    except Exception as exc:
+        return entrypoint, [PrototypeRepairIssue(stage="demo_contract", message=str(exc))]
+    emit(90, "Checking every prototype proof scene at reel and phone sizes", task="prototype_repair")
+    try:
+        _validate_prototype_visuals(project, entrypoint, [scene.scene_id for scene in screen_scenes])
+    except PrototypeVisualValidationError as exc:
+        failed = [finding for finding in exc.report.findings if finding.issues]
+        return entrypoint, [PrototypeRepairIssue(
+            stage="visual_qa",
+            message=f"{len(failed)} browser checks failed across the approved proof scenes",
+            findings=failed,
+        )]
+    except Exception as exc:
+        return entrypoint, [PrototypeRepairIssue(stage="visual_qa", message=str(exc))]
+    return entrypoint, []
+
+
+def _run_prototype_repair_agent(
+    *, route: dict[str, Any], prompt: Path, out_dir: Path, timeout: int,
+) -> tuple[int, str]:
+    provider = route["provider"]
+    model = route["model"]
+    if provider == "codex":
+        command = ["codex", "exec", "--skip-git-repo-check", "--model", model]
+        reasoning = route.get("reasoning_effort")
+        if reasoning:
+            command.extend(["-c", f'model_reasoning_effort="{reasoning}"'])
+        command.append("-")
+        stdin_handle = prompt.open("r", encoding="utf-8")
+        stdin: Any = stdin_handle
+    elif provider == "claude_code":
+        command = ["claude", "--model", model, "-p", prompt.read_text(encoding="utf-8")]
+        stdin = subprocess.DEVNULL
+    else:
+        raise RuntimeError(f"Prototype repair adapter for {provider} is not configured")
+    process = subprocess.Popen(
+        command, cwd=out_dir, stdin=stdin, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1, env=provider_environment(),
+    )
+    output: list[str] = []
+    started = time.monotonic()
+    last_heartbeat = started
+    try:
+        while process.poll() is None:
+            if process.stdout:
+                ready, _, _ = select.select([process.stdout], [], [], 1.0)
+                if ready:
+                    line = process.stdout.readline()
+                    if line:
+                        output.append(line)
+            now = time.monotonic()
+            if now - started > timeout:
+                raise subprocess.TimeoutExpired(command, timeout)
+            if now - last_heartbeat >= 15:
+                _, file_count, newest = _prototype_activity(out_dir)
+                detail = f"; latest file {newest}" if newest else ""
+                emit(92, f"{provider} repair is working ({file_count} source files{detail})", task="prototype_repair")
+                last_heartbeat = now
+        if process.stdout:
+            output.extend(process.stdout.readlines())
+        return process.wait(), "".join(output)
+    except Exception:
+        process.terminate()
+        try:
+            process.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+        raise
+    finally:
+        if stdin_handle is not None:
+            stdin_handle.close()
+
+
+def repair_prototype(
+    store: ProjectStore, episode_id: str, *, max_attempts: int | None = None,
+) -> PrototypeRepairReport:
+    """Validate an existing prototype and run bounded, evidence-only AI repairs."""
+    project = store.project_dir(episode_id)
+    out_dir = project / "04_prototype"
+    if not out_dir.exists():
+        raise RuntimeError("No prototype exists to validate or repair")
+    configured = int(os.getenv("SVF_PROTOTYPE_REPAIR_ATTEMPTS", "2")) if max_attempts is None else max_attempts
+    limit = max(0, min(3, configured))
+    report_path = project / "_requests/prototype_repair_report.json"
+    _, issues = _prototype_validation_issues(store, episode_id)
+    if not issues:
+        if report_path.is_file():
+            previous = load_model(report_path, PrototypeRepairReport)
+            if previous.status == "repaired":
+                return previous
+        report = PrototypeRepairReport(
+            episode_id=episode_id, status="not_needed", max_attempts=limit,
+        )
+        write_json(report_path, report)
+        return report
+    if limit == 0:
+        report = PrototypeRepairReport(
+            episode_id=episode_id, status="failed", max_attempts=0, final_issues=issues,
+        )
+        write_json(report_path, report)
+        raise RuntimeError("Prototype validation failed and automatic repair is disabled")
+
+    route = resolve_task(load_config(store, episode_id), "prototype_repair")
+    attempts: list[PrototypeRepairAttempt] = []
+    repair_root = project / "_requests/prototype_repairs"
+    run_id = time.strftime("run-%Y%m%dT%H%M%SZ", time.gmtime()) + f"-{os.getpid()}"
+    repair_run_root = repair_root / run_id
+    for attempt_number in range(1, limit + 1):
+        attempt_root = repair_run_root / f"attempt-{attempt_number:02d}"
+        inventory_before = _prototype_source_inventory(out_dir)
+        before_hash = _prototype_inventory_hash(inventory_before)
+        _archive_prototype_sources(out_dir, attempt_root / "before", inventory_before)
+        prompt = prototype_repair_prompt(
+            episode_id=episode_id, attempt=attempt_number, max_attempts=limit,
+            issues=[issue.model_dump(mode="json", by_alias=True) for issue in issues],
+            source_inventory=inventory_before,
+        )
+        prompt_path = attempt_root / "prompt.md"
+        log_path = attempt_root / "provider.log"
+        atomic_write_text(prompt_path, prompt)
+        emit(91, f"Starting prototype repair {attempt_number}/{limit} with {route['provider']}", task="prototype_repair")
+        provider_issue: PrototypeRepairIssue | None = None
+        try:
+            returncode, log = _run_prototype_repair_agent(
+                route=route, prompt=prompt_path, out_dir=out_dir,
+                timeout=max(60, int(route.get("timeout_seconds", 1200))),
+            )
+            atomic_write_text(log_path, log)
+            if returncode != 0:
+                provider_issue = PrototypeRepairIssue(
+                    stage="repair_provider", message=f"{route['provider']} exited with status {returncode}: {log[-2000:]}",
+                )
+        except Exception as exc:
+            atomic_write_text(log_path, str(exc) + "\n")
+            provider_issue = PrototypeRepairIssue(stage="repair_provider", message=str(exc))
+
+        if provider_issue:
+            issues_after = [*issues, provider_issue]
+        else:
+            _, issues_after = _prototype_validation_issues(store, episode_id)
+        inventory_after = _prototype_source_inventory(out_dir)
+        after_hash = _prototype_inventory_hash(inventory_after)
+        attempt = PrototypeRepairAttempt(
+            attempt=attempt_number, provider=route["provider"], model=route["model"],
+            status="repaired" if not issues_after else "failed",
+            prompt_path=prompt_path.relative_to(project).as_posix(),
+            log_path=log_path.relative_to(project).as_posix(),
+            source_hash_before=before_hash, source_hash_after=after_hash,
+            issues_before=issues, issues_after=issues_after,
+        )
+        attempts.append(attempt)
+        write_json(attempt_root / "attempt.json", attempt)
+        if not issues_after:
+            report = PrototypeRepairReport(
+                episode_id=episode_id, status="repaired", max_attempts=limit, attempts=attempts,
+            )
+            write_json(report_path, report)
+            emit(99, f"Prototype repair passed every deterministic check on attempt {attempt_number}", task="prototype_repair")
+            return report
+        issues = issues_after
+
+    report = PrototypeRepairReport(
+        episode_id=episode_id, status="failed", max_attempts=limit,
+        attempts=attempts, final_issues=issues,
+    )
+    write_json(report_path, report)
+    raise RuntimeError(
+        f"Prototype repair exhausted {limit} attempt(s); inspect {report_path.relative_to(project)}"
+    )
 
 
 def _validate_static_prototype(out_dir: Path, *, screen_scenes: list[Any] | None = None) -> Path:
@@ -739,10 +972,10 @@ def _validate_static_prototype(out_dir: Path, *, screen_scenes: list[Any] | None
     return entrypoint
 
 
-def _validate_prototype_visuals(project: Path, entrypoint: Path, scene_ids: list[str]) -> None:
+def _validate_prototype_visuals(project: Path, entrypoint: Path, scene_ids: list[str]) -> PrototypeVisualReport:
     """Run deterministic browser checks at the reel canvas and a real phone width."""
     if not scene_ids:
-        return
+        return PrototypeVisualReport(ok=True, findings=[])
     repo_root = Path(__file__).resolve().parents[1]
     with socket.socket() as reservation:
         reservation.bind(("127.0.0.1", 0))
@@ -770,11 +1003,70 @@ def _validate_prototype_visuals(project: Path, entrypoint: Path, scene_ids: list
             server.kill()
     log = ((result.stdout or "") + "\n" + (result.stderr or "")) if result else "Prototype visual QA did not start"
     atomic_write_text(project / "_requests/prototype_visual_qa.log", log)
-    if not result or result.returncode != 0:
-        raise RuntimeError(
-            "Prototype is not camera-ready at the 1080x1920 reel canvas and 390x844 phone viewport. "
-            f"Fix the visual QA findings and rebuild: {log[-5000:]}"
+    if not result:
+        raise RuntimeError("Prototype visual QA did not start")
+    try:
+        report = PrototypeVisualReport.model_validate(json.loads(result.stdout))
+    except Exception as exc:
+        raise RuntimeError(f"Prototype visual QA returned an invalid report: {log[-3000:]}") from exc
+    write_json(project / "_requests/prototype_visual_qa.json", report)
+    if result.returncode != 0 or not report.ok:
+        raise PrototypeVisualValidationError(report)
+    return report
+
+
+def _validate_graphics_visuals(
+    project: Path,
+    plan: GraphicsPlan,
+    *,
+    fps: int,
+    width: int,
+    height: int,
+) -> GraphicsVisualReport:
+    """Inspect stable cue frames and action liveness in a deterministic browser."""
+    repo_root = Path(__file__).resolve().parents[1]
+    graphics_root = project / "08_graphics"
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = int(reservation.getsockname()[1])
+    server = subprocess.Popen(
+        [sys.executable, str(repo_root / "scripts/serve_demo.py"), str(graphics_root), str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    result: subprocess.CompletedProcess[str] | None = None
+    try:
+        time.sleep(0.6)
+        result = subprocess.run(
+            [
+                str(node_binary()), str(repo_root / "scripts/validate_graphics.mjs"),
+                f"http://127.0.0.1:{port}/master.html",
+                str(graphics_root / "graphics_plan.json"), str(fps), str(width), str(height),
+            ],
+            cwd=repo_root, capture_output=True, text=True, timeout=240,
         )
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            server.kill()
+    log = ((result.stdout or "") + "\n" + (result.stderr or "")) if result else "Graphics visual QA did not start"
+    atomic_write_text(project / "_requests/graphics_visual_qa.log", log)
+    if not result:
+        raise RuntimeError("Graphics visual QA did not start")
+    try:
+        report = GraphicsVisualReport.model_validate(json.loads(result.stdout))
+    except Exception as exc:
+        raise RuntimeError(f"Graphics visual QA returned an invalid report: {log[-3000:]}") from exc
+    write_json(project / "_requests/graphics_visual_qa.json", report)
+    if result.returncode != 0 or not report.ok:
+        failures = [finding for finding in report.findings if finding.issues]
+        summary = "; ".join(
+            f"{finding.scene_id} {finding.moment}: {', '.join(finding.issues)}"
+            for finding in failures[:8]
+        )
+        raise RuntimeError(f"Graphics frame QA failed: {summary}")
+    return report
 
 
 def generate_graphics_plan(
@@ -793,27 +1085,114 @@ def generate_graphics_plan(
     if not graphics_scenes:
         raise RuntimeError("The approved director plan has no HyperFrames/static graphics scenes")
     screen_scenes = [scene for scene in director.scenes if scene.renderer == "playwright"]
-    emit(10, f"Planning {len(graphics_scenes)} graphics scenes", task="graphics_builder")
+    words_path = project / "02_voice/audio_word_timestamps.json"
+    words = load_model(words_path, WordTimestampBundle) if words_path.is_file() else None
+    emit(
+        10,
+        f"Planning {len(graphics_scenes)} {brief.graphics_theme} graphics scenes",
+        task="graphics_builder",
+    )
+    deterministic_plan_requested = agent_kind == "mock"
     if agent_kind == "mock":
-        plan = _default_graphics_plan(episode_id, director, graphics_scenes)
+        plan = _default_graphics_plan(
+            episode_id, director, graphics_scenes, graphics_theme=brief.graphics_theme,
+        )
     else:
         agent = _structured_agent(
             store, "graphics_builder", {"episode_id": episode_id},
             agent_kind=agent_kind, consume_response=consume_response,
         )
-        plan = agent.run(
+        base_prompt = graphics_builder_prompt(
+            brief, narration,
+            [scene.model_dump(mode="json") for scene in graphics_scenes],
+            [scene.model_dump(mode="json") for scene in screen_scenes],
+            words,
+        )
+        plan = _run_graphics_agent(
+            agent,
             stage="graphics_builder",
-            prompt=graphics_builder_prompt(
-                brief, narration,
-                [scene.model_dump(mode="json") for scene in graphics_scenes],
-                [scene.model_dump(mode="json") for scene in screen_scenes],
-            ),
+            prompt=base_prompt,
             output_model=GraphicsPlan,
             request_dir=project / "_requests",
         )
-    _validate_graphics_against_director(plan, director)
+        quality_repair_attempt = 0
+        maximum_quality_repairs = 2
+        while True:
+            try:
+                plan = _prepare_graphics_candidate(
+                    plan, brief=brief, director=director, words=words,
+                )
+                break
+            except RuntimeError as exc:
+                if quality_repair_attempt >= maximum_quality_repairs:
+                    raise RuntimeError(
+                        f"Graphics quality repair failed after {maximum_quality_repairs} attempts. "
+                        f"Last measured defects: {exc}"
+                    ) from exc
+                quality_repair_attempt += 1
+                emit(
+                    34 + quality_repair_attempt * 8,
+                    f"Graphics contract failed quality checks; requesting bounded repair "
+                    f"{quality_repair_attempt}/{maximum_quality_repairs}",
+                    task="graphics_builder",
+                )
+                stage = (
+                    "graphics_builder_quality_repair"
+                    if quality_repair_attempt == 1
+                    else f"graphics_builder_quality_repair_{quality_repair_attempt}"
+                )
+                repair_prompt = (
+                    base_prompt.rstrip()
+                    + f"\n\n# BOUNDED QUALITY REPAIR {quality_repair_attempt}/{maximum_quality_repairs}\n"
+                    + "The previous contract passed its JSON schema but failed deterministic quality gates. "
+                    + "Every measured defect below must be fixed together. Return a complete corrected "
+                    + "GraphicsPlan and preserve episode and scene timings exactly. Do not change already-valid "
+                    + "facts, narration anchors, or the operator-selected theme.\n"
+                    + f"Measured defects:\n{exc}\n\nPrevious contract:\n"
+                    + plan.model_dump_json(indent=2)
+                )
+                plan = _run_graphics_agent(
+                    agent,
+                    stage=stage,
+                    prompt=repair_prompt,
+                    output_model=GraphicsPlan,
+                    request_dir=project / "_requests",
+                )
+    if deterministic_plan_requested:
+        plan = _prepare_graphics_candidate(
+            plan, brief=brief, director=director, words=words, require_anchors=False,
+        )
     emit(55, "Graphics contracts validated; compiling scene previews", task="graphics_builder")
-    write_graphics_package(project, plan, width=brief.width, height=brief.height)
+    write_graphics_package(project, plan, width=brief.width, height=brief.height, fps=brief.fps)
+    emit(70, "Checking cue frames, safe bounds, motion, and object overlap", task="graphics_builder")
+    try:
+        _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
+    except RuntimeError as exc:
+        if deterministic_plan_requested:
+            raise
+        emit(76, "Measured graphics frames failed; requesting one visual repair", task="graphics_builder")
+        visual_repair_prompt = (
+            base_prompt.rstrip()
+            + "\n\n# BOUNDED VISUAL REPAIR\n"
+            + "The previous contract passed semantic validation but failed deterministic browser frame QA. "
+            + "Return a complete corrected GraphicsPlan. Preserve episode and scene timings exactly, "
+            + "fix only the measured visibility, sizing, bounds, or overlap defects, and keep every factual "
+            + "claim grounded in the approved inputs.\n"
+            + f"Measured issue: {exc}\n\nPrevious contract:\n"
+            + plan.model_dump_json(indent=2)
+        )
+        plan = _run_graphics_agent(
+            agent,
+            stage="graphics_builder_visual_repair",
+            prompt=visual_repair_prompt,
+            output_model=GraphicsPlan,
+            request_dir=project / "_requests",
+        )
+        plan = _prepare_graphics_candidate(
+            plan, brief=brief, director=director, words=words,
+        )
+        write_graphics_package(project, plan, width=brief.width, height=brief.height, fps=brief.fps)
+        _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
     emit(82, "Building the interactive voice-timed timeline preview", task="graphics_builder")
     build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
     store.transition(episode_id, EpisodeStage.COMPOSITION_READY)
@@ -821,19 +1200,88 @@ def generate_graphics_plan(
     return plan
 
 
+def _run_graphics_agent(
+    agent: StructuredAgent,
+    *,
+    stage: str,
+    prompt: str,
+    output_model: type[GraphicsPlan],
+    request_dir: Path,
+) -> GraphicsPlan:
+    """Run graphics AI without silently replacing a provider failure with mock output."""
+    try:
+        return agent.run(
+            stage=stage,
+            prompt=prompt,
+            output_model=output_model,
+            request_dir=request_dir,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+        normalized = message.casefold()
+        limit_markers = (
+            "usage limit",
+            "insufficient_quota",
+            "quota exceeded",
+            "quota has been exceeded",
+            "billing hard limit",
+            "credit balance",
+            "resource_exhausted",
+        )
+        if any(marker in normalized for marker in limit_markers):
+            raise RuntimeError(
+                "Graphics generation stopped: the selected AI provider's usage limit is exhausted. "
+                "No deterministic fallback or new preview was generated. Change the provider/model "
+                "or replenish its quota, then retry."
+            ) from exc
+        raise
+
+
+def _prepare_graphics_candidate(
+    plan: GraphicsPlan,
+    *,
+    brief: EpisodeBrief,
+    director: DirectorPlan,
+    words: WordTimestampBundle | None,
+    require_anchors: bool | None = None,
+) -> GraphicsPlan:
+    """Align and run every deterministic contract gate before browser compilation."""
+    _validate_graphics_theme(plan, brief.graphics_theme)
+    candidate = _align_graphics_actions_to_words(plan, director, words, fps=brief.fps)
+    _validate_graphics_against_director(candidate, director)
+    _validate_graphics_storytelling_quality(
+        candidate,
+        require_anchors=words is not None if require_anchors is None else require_anchors,
+    )
+    return candidate
+
+
 def _default_graphics_plan(
     episode_id: str,
     director: DirectorPlan,
     scenes: list[Any],
+    *,
+    graphics_theme: GraphicsTheme = "editorial",
 ) -> GraphicsPlan:
-    shell_by_type = {
-        "motion_graphic": "flow_stage", "diagram": "system_stage", "ui_mockup": "queue_stage",
-        "broll": "editorial_stage", "cta": "editorial_stage",
+    shells_by_type = {
+        "motion_graphic": ["metaphor_stage", "spatial_stage", "flow_stage"],
+        "diagram": ["system_stage", "map_stage", "data_stage"],
+        "ui_mockup": ["document_stage", "collage_stage", "queue_stage"],
+        "broll": ["collage_stage", "editorial_stage", "spatial_stage"],
+        "cta": ["editorial_stage", "metaphor_stage", "spatial_stage"],
     }
     def object_type(label: str) -> str:
         value = label.lower()
-        if any(word in value for word in ("email", "text", "paper", "invoice", "file")):
-            return "document"
+        if re.search(r"\d", value):
+            return "number"
+        if any(word in value for word in ("route", "path", "handoff", "flow")):
+            return "route"
+        if any(word in value for word in ("origin", "destination", "location", "region", "map")):
+            return "map_region"
+        if any(word in value for word in ("worker", "owner", "coordinator", "customer", "person")):
+            return "figure"
+        if any(word in value for word in ("email", "text", "paper", "invoice", "file", "receipt")):
+            return "artifact"
         if any(word in value for word in ("review", "approval", "ai", "resolve")):
             return "decision"
         if any(word in value for word in ("record", "queue", "status")):
@@ -846,60 +1294,301 @@ def _default_graphics_plan(
             return cleaned
         return cleaned[:limit].rsplit(" ", 1)[0] + "…"
 
+    def display_phrase(value: str, words: int = 7) -> str:
+        cleaned = re.sub(
+            r"\b(simple|generic|animation|screen|panel|card|shows?|pulses?|appears?|visual|"
+            r"center|phrase|vertical|kinetic|graphic|composition|animate[sd]?|highlight[sed]*|opaque|transparent)\b",
+            " ", value, flags=re.IGNORECASE,
+        )
+        tokens = cleaned.replace("…", "").split()
+        return " ".join(tokens[:words]).strip(" .,:;-—") or "THE WORKFLOW CHANGES"
+
+    def visual_labels(scene: Any) -> list[str]:
+        supplied = [value.strip() for value in scene.on_screen_text if value.strip()]
+        candidates = [display_phrase(value, 4) for value in supplied[1:6]]
+        candidates.extend(display_phrase(value, 4) for value in scene.emphasis[:5])
+        if len(candidates) < 2:
+            raw = re.sub(
+                r"\b(branches? toward|converges? into|turns? into|becomes?)\b",
+                ",", scene.visual_brief, flags=re.IGNORECASE,
+            )
+            candidates.extend(
+                display_phrase(value, 4) for value in re.split(r"[,+;]|→", raw) if value.strip()
+            )
+        labels: list[str] = []
+        seen: set[str] = set()
+        for value in candidates:
+            key = value.casefold()
+            if value and key not in seen:
+                seen.add(key)
+                labels.append(value)
+            if len(labels) == 5:
+                break
+        return labels or [display_phrase(scene.purpose, 4)]
+
     contracts: list[GraphicsScenePlan] = []
     continuity: str | None = None
-    for scene in scenes:
-        labels = [value.strip() for value in scene.on_screen_text if value.strip()][:5]
-        if not labels:
-            labels = [scene.purpose[:72]]
-        headline = labels[0]
-        object_labels = labels[1:] if len(labels) > 1 else [scene.purpose]
+    frame_layouts = [
+        [(4, 7, 38, 28), (51, 18, 43, 24), (13, 54, 35, 28), (58, 58, 34, 24), (35, 38, 31, 22)],
+        [(8, 16, 46, 26), (57, 6, 35, 33), (48, 48, 44, 27), (4, 61, 36, 23), (27, 37, 34, 22)],
+        [(6, 5, 34, 31), (49, 9, 44, 22), (11, 47, 45, 30), (62, 55, 30, 25), (35, 31, 30, 23)],
+    ]
+    for scene_index, scene in enumerate(scenes):
+        supplied = [value.strip() for value in scene.on_screen_text if value.strip()][:5]
+        headline = display_phrase(supplied[0] if supplied else scene.narration_excerpt, 7)
+        object_labels = [value for value in visual_labels(scene) if value.casefold() != headline.casefold()]
+        if not object_labels:
+            object_labels = [display_phrase(scene.purpose, 4)]
+        positions = frame_layouts[scene_index % len(frame_layouts)]
         objects = [
             GraphicsObject(
                 object_id=f"{scene.scene_id.lower()}-object-{index}",
                 object_type=object_type(label),
                 role="visual evidence" if index == len(object_labels) else "workflow step",
                 label=label,
-                detail=concise(
-                    scene.emphasis[index - 1] if index <= len(scene.emphasis) else scene.purpose,
-                ),
+                detail=display_phrase(scene.emphasis[index - 1], 6) if index <= len(scene.emphasis) else "",
                 slot=["left", "center", "right", "bottom", "top"][(index - 1) % 5],
+                frame=GraphicsFrame(
+                    x=positions[index - 1][0], y=positions[index - 1][1],
+                    width=positions[index - 1][2], height=positions[index - 1][3],
+                    rotation=(-4, 3, -2, 5, 0)[(index - 1) % 5],
+                    depth=("foreground" if index in {1, len(object_labels)} else "midground"),
+                ),
+                visual_form=f"topic-specific {object_type(label).replace('_', ' ')} depiction",
+                initially_visible=index == 1,
             )
             for index, label in enumerate(object_labels, 1)
         ]
         duration = scene.end - scene.start
         actions = [
             GraphicsAction(
-                at_seconds=min(duration * 0.72, 0.35 + (index - 1) * max(0.35, duration * 0.11)),
-                action="reveal", target=item.object_id,
+                at_seconds=min(duration * 0.5, 0.18 + (index - 1) * max(0.3, duration * 0.08)),
+                action="reveal", target=item.object_id, duration_seconds=0.5,
+                direction=("right" if index % 2 else "left"),
             )
             for index, item in enumerate(objects, 1)
+            if not item.initially_visible
         ]
         if len(objects) > 1:
             actions.append(GraphicsAction(
                 at_seconds=min(duration * 0.76, max(action.at_seconds for action in actions) + 0.35),
-                action="connect", target=objects[-1].object_id, source=objects[0].object_id,
+                action="trace", target=objects[-1].object_id, source=objects[0].object_id,
+                duration_seconds=min(1.2, max(0.4, duration * 0.12)),
             ))
         actions.append(GraphicsAction(
-            at_seconds=min(duration * 0.86, max(0.0, duration - 0.7)),
-            action="highlight", target=objects[-1].object_id,
+            at_seconds=min(duration * 0.58, max(0.4, duration * 0.44)),
+            action="transform", target=objects[-1].object_id,
+            value=concise(scene.visual_brief, 70), duration_seconds=min(1.1, max(0.45, duration * 0.12)),
+            direction="in",
         ))
+        actions.append(GraphicsAction(
+            at_seconds=max(0.0, duration - 0.8),
+            action="focus", target=objects[-1].object_id, duration_seconds=0.55,
+        ))
+        shell_options = shells_by_type.get(scene.type, ["editorial_stage", "spatial_stage", "metaphor_stage"])
+        shell = shell_options[scene_index % len(shell_options)]
         contracts.append(GraphicsScenePlan(
             scene_id=scene.scene_id, start=scene.start, end=scene.end,
-            scene_shell=shell_by_type.get(scene.type, "editorial_stage"),
-            motion_grammar="cause_and_effect" if len(objects) > 1 else "editorial_reveal",
-            layout_variant=f"{len(objects)}-object-{scene.type.replace('_', '-')}",
+            scene_shell=shell,
+            motion_grammar=("object_transformation" if len(objects) == 1 else "cause_and_effect"),
+            layout_variant=f"asymmetric-{scene.type.replace('_', '-')}-world",
             visual_thesis=scene.visual_brief,
-            headline=headline, support=scene.purpose,
+            headline=concise(headline, 54), support="",
+            visual_world=concise(scene.visual_brief, 120),
+            opening_state=f"Unresolved {concise(scene.purpose, 82)}",
+            payoff_state=f"The final object visibly resolves {concise(scene.purpose, 78)}",
+            camera_move=("push_in" if scene_index % 3 == 0 else "pan_right" if scene_index % 3 == 1 else "pull_out"),
             continuity_object=continuity,
-            objects=objects, actions=actions,
+            objects=objects, actions=sorted(actions, key=lambda item: item.at_seconds),
+            review_checkpoints=sorted(set([
+                round(min(duration - 0.1, max(0.05, duration * 0.12)), 3),
+                round(min(duration - 0.1, max(0.05, duration * 0.58)), 3),
+                round(max(0.05, duration - 0.72), 3),
+            ])),
         ))
         continuity = objects[-1].label
     return GraphicsPlan(
         episode_id=episode_id, duration_seconds=director.duration_seconds,
-        creative_thesis=director.visual_thesis, scenes=contracts,
+        theme=graphics_theme, creative_thesis=director.visual_thesis, scenes=contracts,
         warnings=["Deterministic graphics plan used; regenerate with a configured structured model for richer choreography"],
     )
+
+
+def _validate_graphics_theme(plan: GraphicsPlan, expected_theme: GraphicsTheme) -> None:
+    if "theme" not in plan.model_fields_set:
+        raise RuntimeError("Graphics plan omits the operator-selected top-level theme")
+    if plan.theme != expected_theme:
+        raise RuntimeError(
+            f"Graphics plan theme {plan.theme!r} does not match the operator-selected "
+            f"theme {expected_theme!r}"
+        )
+
+
+def _align_graphics_actions_to_words(
+    plan: GraphicsPlan,
+    director: DirectorPlan,
+    words: WordTimestampBundle | None,
+    *,
+    fps: int = 30,
+) -> GraphicsPlan:
+    if words is None:
+        return plan
+    source_by_id = {scene.scene_id: scene for scene in director.scenes}
+    aligned_scenes: list[GraphicsScenePlan] = []
+    for scene in plan.scenes:
+        source = source_by_id[scene.scene_id]
+        actions: list[GraphicsAction] = []
+        for action in scene.actions:
+            if not action.anchor_text:
+                actions.append(action)
+                continue
+            aligned = _cue_anchor_start(
+                action.anchor_text, source, words, occurrence=action.anchor_occurrence,
+            )
+            if aligned is None:
+                raise RuntimeError(
+                    f"Graphics action {scene.scene_id}/{action.action} uses narration anchor "
+                    f"{action.anchor_text!r} occurrence {action.anchor_occurrence}, which was not found inside the scene"
+                )
+            # A rendered event must never precede the spoken anchor. Quantize to
+            # the first whole output frame at or after Whisper's exact word start.
+            frame = math.ceil(max(0.0, aligned) * fps - 1e-9)
+            frame_aligned = min(scene.end - scene.start, frame / fps)
+            actions.append(action.model_copy(update={"at_seconds": round(frame_aligned, 6)}))
+        aligned_scenes.append(scene.model_copy(update={"actions": sorted(actions, key=lambda item: item.at_seconds)}))
+    return plan.model_copy(update={"scenes": aligned_scenes})
+
+
+def _validate_graphics_storytelling_quality(plan: GraphicsPlan, *, require_anchors: bool) -> None:
+    """Reject slide-deck-like plans and report all repairable defects together."""
+    issues: list[str] = []
+    forbidden_layout_words = {"grid", "dashboard", "cards", "columns", "quadrant", "tiles"}
+    shells = [scene.scene_shell for scene in plan.scenes]
+    if len(plan.scenes) >= 4 and len(set(shells)) < 3:
+        issues.append("Graphics plan needs at least three distinct visual worlds/shells")
+    for previous, current in zip(plan.scenes, plan.scenes[1:]):
+        if previous.scene_shell == current.scene_shell:
+            issues.append(
+                f"Adjacent graphics scenes repeat {current.scene_shell}: "
+                f"{previous.scene_id}, {current.scene_id}"
+            )
+    for scene in plan.scenes:
+        duration = scene.end - scene.start
+        if not scene.visual_world.strip() or not scene.opening_state.strip() or not scene.payoff_state.strip():
+            issues.append(f"Graphics scene {scene.scene_id} lacks an evolving visual-world contract")
+        if scene.opening_state.casefold() == scene.payoff_state.casefold():
+            issues.append(f"Graphics scene {scene.scene_id} opening and payoff states are identical")
+        layout_words = set(_cue_tokens(scene.layout_variant))
+        if layout_words & forbidden_layout_words:
+            issues.append(f"Graphics scene {scene.scene_id} uses generic layout {scene.layout_variant!r}")
+        undeclared_visibility = [
+            item.object_id for item in scene.objects
+            if "initially_visible" not in item.model_fields_set
+        ]
+        if undeclared_visibility:
+            issues.append(
+                f"Graphics scene {scene.scene_id} omits initially_visible for: "
+                f"{', '.join(undeclared_visibility)}"
+            )
+        opening_objects = [item for item in scene.objects if item.initially_visible]
+        if not 1 <= len(opening_objects) <= 3:
+            issues.append(
+                f"Graphics scene {scene.scene_id} must declare one to three opening-frame objects"
+            )
+        duplicate_headline = [
+            item.object_id for item in scene.objects
+            if item.label.strip().casefold() == scene.headline.strip().casefold()
+        ]
+        if duplicate_headline:
+            issues.append(
+                f"Graphics scene {scene.scene_id} repeats its headline as objects: "
+                f"{', '.join(duplicate_headline)}"
+            )
+        for item in scene.objects:
+            reveals = [
+                action for action in scene.actions
+                if action.target == item.object_id and action.action == "reveal"
+            ]
+            participation = sorted(
+                [
+                    action for action in scene.actions
+                    if action.action != "hold"
+                    and (action.target == item.object_id or action.source == item.object_id)
+                ],
+                key=lambda action: action.at_seconds,
+            )
+            if item.initially_visible and reveals:
+                issues.append(
+                    f"Graphics scene {scene.scene_id}/{item.object_id} is initially visible and must not reveal again"
+                )
+            if not item.initially_visible:
+                if len(reveals) != 1:
+                    issues.append(
+                        f"Graphics scene {scene.scene_id}/{item.object_id} needs exactly one reveal"
+                    )
+                elif reveals:
+                    earliest_participation = participation[0].at_seconds if participation else math.inf
+                    if reveals[0].at_seconds > earliest_participation + 1e-6:
+                        issues.append(
+                            f"Graphics scene {scene.scene_id}/{item.object_id} is used before its reveal"
+                        )
+        unframed = [item.object_id for item in scene.objects if item.frame is None]
+        if unframed:
+            issues.append(
+                f"Graphics scene {scene.scene_id} needs explicit frames for: {', '.join(unframed)}"
+            )
+        readable_frames = [
+            item.frame for item in scene.objects
+            if item.frame is not None and item.frame.depth != "background"
+        ]
+        undersized = [
+            item.object_id for item in scene.objects
+            if item.frame is not None
+            and item.frame.depth != "background"
+            and item.object_type not in {"route", "boundary", "axis"}
+            and (item.frame.width < 18 or item.frame.height < 10)
+        ]
+        if undersized:
+            issues.append(
+                f"Graphics scene {scene.scene_id} has undersized readable objects: {', '.join(undersized)}"
+            )
+        if readable_frames:
+            span_width = max(frame.x + frame.width for frame in readable_frames) - min(frame.x for frame in readable_frames)
+            span_height = max(frame.y + frame.height for frame in readable_frames) - min(frame.y for frame in readable_frames)
+            if span_width < 65 or span_height < 55:
+                issues.append(
+                    f"Graphics scene {scene.scene_id} under-fills the portrait stage "
+                    f"({span_width:.1f}% wide × {span_height:.1f}% high)"
+                )
+        meaningful = [
+            action for action in scene.actions
+            if action.action not in {"reveal", "hold", "highlight", "stamp", "focus"}
+        ]
+        if not meaningful:
+            issues.append(f"Graphics scene {scene.scene_id} only reveals labels; it does not prove a change")
+        checkpoints = sorted(scene.review_checkpoints)
+        if len(checkpoints) < 2:
+            issues.append(f"Graphics scene {scene.scene_id} needs proof and payoff review checkpoints")
+        action_times = sorted({0.0, *[item.at_seconds for item in scene.actions], max(0.0, duration - 0.7)})
+        if any(right - left > 4.25 for left, right in zip(action_times, action_times[1:])):
+            issues.append(f"Graphics scene {scene.scene_id} stays visually unchanged for more than 4.25 seconds")
+        if max(item.at_seconds for item in scene.actions) < duration * 0.62:
+            issues.append(f"Graphics scene {scene.scene_id} has no observable final-third payoff")
+        if require_anchors:
+            unanchored = [
+                item.action for item in scene.actions
+                if item.action != "hold" and not (item.anchor_text or "").strip()
+            ]
+            if unanchored:
+                issues.append(
+                    f"Graphics scene {scene.scene_id} has non-word-timed actions: {', '.join(unanchored)}"
+                )
+    if issues:
+        maximum_reported = 40
+        reported = issues[:maximum_reported]
+        overflow = len(issues) - len(reported)
+        suffix = f"\n- … and {overflow} more defects" if overflow else ""
+        raise RuntimeError("Graphics quality gate failed:\n- " + "\n- ".join(reported) + suffix)
 
 
 def _validate_graphics_against_director(plan: GraphicsPlan, director: DirectorPlan) -> None:
@@ -985,19 +1674,34 @@ def generate_voice(store: ProjectStore, episode_id: str) -> VoiceMetadata:
     output = project / "02_voice/voice_master.wav"
     _clear_voice_timing(project)
     if route["provider"] in {"elevenlabs", "gemini"}:
-        result = generate_tts(
-            provider=route["provider"], model=route["model"], text=narration.text, output=output,
-            timeout=max(10, int(route.get("timeout_seconds", 900))), voice_id=route.get("voice_id"),
+        voice_id = route.get("voice_id") or (
+            os.getenv("ELEVENLABS_VOICE_ID", "") if route["provider"] == "elevenlabs"
+            else os.getenv("GEMINI_TTS_VOICE", "Kore")
         )
-        alignment = Path(result.alignment_path) if result.alignment_path else None
+        if not voice_id:
+            raise RuntimeError(f"Select a {route['provider']} voice in Model orchestration before generating audio")
+        emit(4, f"Preparing paragraph-sized TTS batches with {voice_id}", task="voice_generator")
+
+        def chunk_progress(completed: int, total: int, status: str) -> None:
+            percent = 5 + (completed / total) * 85
+            emit(percent, f"Voice chunk {completed}/{total} {status}", task="voice_generator")
+
+        manifest = generate_batched_voice(
+            project=project, episode_id=episode_id, narration=narration,
+            provider=route["provider"], model=route["model"], voice_id=voice_id,
+            output=output, timeout=max(10, int(route.get("timeout_seconds", 900))),
+            progress=chunk_progress,
+        )
+        manifest_path = project / "02_voice/audio_chunks/manifest.json"
         meta = VoiceMetadata(
             episode_id=episode_id, audio_path=str(output.relative_to(project)),
             duration_seconds=_duration(output), source="generated",
-            transcript_path=str(alignment.relative_to(project)) if alignment else None,
+            provider=route["provider"], model=route["model"], voice_id=voice_id,
+            chunk_manifest_path=str(manifest_path.relative_to(project)), chunk_count=len(manifest.chunks),
         )
         write_json(project / "02_voice/voice.json", meta)
         store.transition(episode_id, EpisodeStage.VOICE_READY)
-        emit(100, f"Voice generated with {result.provider}", task="voice_generator")
+        emit(100, f"Assembled {len(manifest.chunks)} quality-checked voice chunks with {route['provider']}", task="voice_generator")
         return meta
     template = route.get("media_command_template", "").strip()
     if not template:

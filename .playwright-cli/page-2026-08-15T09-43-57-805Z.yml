@@ -1,0 +1,255 @@
+- generic [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e3]:
+      - generic:
+        - heading "EVERY MORNING" [level=1]
+        - paragraph: 30–40 NEW QUOTE REQUESTS
+      - generic [ref=e4]:
+        - article [ref=e6]:
+          - strong [ref=e9]: EVERY MORNING
+        - article [ref=e10]:
+          - strong [ref=e13]: SHARED INBOX
+        - article [ref=e14]:
+          - strong [ref=e17]: QUOTE REQUEST
+        - article [ref=e18]:
+          - generic [ref=e19]:
+            - strong [ref=e21]: NEW REQUESTS
+            - text: NEW REQUESTS
+        - article [ref=e22]:
+          - generic [ref=e24]:
+            - strong [ref=e25]: 30–40
+            - generic [ref=e26]: new quote requests
+      - strong [ref=e28]: quote-envelope
+    - generic [ref=e29]:
+      - generic:
+        - heading "THE SAME SEQUENCE" [level=1]
+      - generic [ref=e30]:
+        - article [ref=e32]:
+          - strong [ref=e35]: READ EMAIL
+        - article [ref=e36]:
+          - strong [ref=e39]: RECURRING SEQUENCE
+        - article [ref=e40]:
+          - generic [ref=e41]:
+            - strong [ref=e43]: CUSTOMER LANGUAGE
+            - text: ↗
+        - article [ref=e44]:
+          - strong [ref=e47]: INTERPRET SHIPMENT
+        - article [ref=e48]:
+          - generic [ref=e49]:
+            - strong [ref=e51]: CHOOSE TEMPLATE
+            - text: CHOOSE TEMPLATE
+      - strong [ref=e53]: quote-envelope
+    - generic [ref=e54]:
+      - generic:
+        - heading "MANUAL, STEP BY STEP" [level=1]
+        - paragraph: NOT FINISHED
+      - generic [ref=e55]:
+        - article [ref=e57]:
+          - strong [ref=e60]: MANUAL ROUTE
+        - article [ref=e61]:
+          - strong [ref=e64]: FIND RATE
+        - article [ref=e65]:
+          - strong [ref=e68]: "INCREMENT QUOTE #"
+        - article [ref=e69]:
+          - strong [ref=e72]: SEND REPLY
+        - article [ref=e73]:
+          - generic [ref=e74]:
+            - strong [ref=e76]: NOT FINISHED
+            - text: ↗
+      - strong [ref=e78]: workflow-ribbon
+    - generic [ref=e79]:
+      - generic:
+        - heading "WEEKLY RECOUNT" [level=1]
+        - paragraph: COUNT WINS + LOSSES
+      - generic [ref=e80]:
+        - article [ref=e82]:
+          - strong [ref=e85]: QUOTE LEDGER
+        - article [ref=e86]:
+          - strong [ref=e89]: NUMBER SEQUENCE
+        - article [ref=e90]:
+          - generic [ref=e91]:
+            - strong [ref=e93]: WINS + LOSSES
+            - text: LOSS
+        - article [ref=e94]:
+          - generic [ref=e95]:
+            - strong [ref=e97]: COUNT AGAIN
+            - text: ↗
+        - article [ref=e98]:
+          - generic [ref=e100]:
+            - strong [ref=e101]: “COPYING INFORMATION”
+            - generic [ref=e102]: Client's initial description
+      - strong [ref=e104]: quote-number-sequence
+    - generic [ref=e105]:
+      - generic:
+        - heading "NOT COPYING" [level=1]
+        - paragraph: DECIDING WHAT IT MEANS
+      - generic [ref=e106]:
+        - article [ref=e108]:
+          - strong [ref=e111]: CUSTOMER DETAILS
+        - article [ref=e112]:
+          - strong [ref=e115]: COPY
+        - article [ref=e116]:
+          - strong [ref=e119]: SHIPMENT RECORD
+        - article [ref=e120]:
+          - strong [ref=e123]: DECIDING MEANING
+        - article [ref=e124]:
+          - generic [ref=e125]:
+            - strong [ref=e127]: NOT COPYING
+            - text: ↗
+        - text: VS
+      - strong [ref=e129]: quote-envelope
+    - generic [ref=e130]:
+      - generic:
+        - heading "INCONSISTENT LANGUAGE" [level=1]
+        - paragraph: SIX FACTS TO RESOLVE
+      - generic [ref=e131]:
+        - article [ref=e133]:
+          - strong [ref=e136]: CUSTOMER LANGUAGE
+        - article [ref=e137]:
+          - strong [ref=e140]: ORIGIN
+        - article [ref=e141]:
+          - strong [ref=e144]: DESTINATION
+        - article [ref=e145]:
+          - strong [ref=e148]: CARGO
+        - article [ref=e149]:
+          - strong [ref=e152]: MODE
+        - article [ref=e153]:
+          - strong [ref=e156]: WEIGHT
+        - article [ref=e157]:
+          - strong [ref=e160]: DATES
+      - strong [ref=e162]: quote-envelope
+    - generic [ref=e163]:
+      - generic:
+        - heading "MISSING FACT?" [level=1]
+        - paragraph: ASK ONE FOLLOW-UP
+      - generic [ref=e164]:
+        - article [ref=e166]:
+          - strong [ref=e169]: SHIPMENT RECORD
+        - article [ref=e170]:
+          - strong [ref=e173]: "MISSING: WEIGHT"
+        - article [ref=e174]:
+          - strong [ref=e177]: REQUIRED FACTS
+        - article [ref=e178]:
+          - strong [ref=e181]: ASK ONE FOLLOW-UP
+        - article [ref=e182]:
+          - strong [ref=e185]: WHAT IS THE WEIGHT?
+        - article [ref=e186]:
+          - strong [ref=e189]: PRICING WAITS
+      - strong [ref=e191]: shipment-record
+    - generic [ref=e192]:
+      - generic:
+        - heading "SPLIT THE WORKFLOW" [level=1]
+        - paragraph: "AI: INTERPRET • CODE: EXECUTE"
+      - generic [ref=e193]:
+        - article [ref=e195]:
+          - strong [ref=e198]: WORKFLOW
+        - article [ref=e199]:
+          - strong [ref=e202]: "AI: INTERPRET"
+        - article [ref=e203]:
+          - strong [ref=e206]: HANDOFF
+        - article [ref=e207]:
+          - strong [ref=e210]: STRUCTURED REQUEST
+        - article [ref=e211]:
+          - strong [ref=e214]: "CODE: EXECUTE"
+      - strong [ref=e216]: shipment-record
+    - generic [ref=e220]:
+      - generic:
+        - heading "SEPARATE RESPONSIBILITIES" [level=1]
+        - paragraph: MODEL NEVER INVENTS A RATE
+      - generic [ref=e221]:
+        - article [ref=e223]:
+          - strong [ref=e226]: STRUCTURED REQUEST
+        - article [ref=e227]:
+          - strong [ref=e230]: APPROVED RATE TABLE
+        - article [ref=e231]:
+          - strong [ref=e234]: "CODE: CALCULATE"
+        - article [ref=e235]:
+          - strong [ref=e238]: FIXED PRICE
+        - article [ref=e239]:
+          - strong [ref=e242]: "AI: DRAFT EMAIL"
+        - article [ref=e243]:
+          - strong [ref=e246]: NO AI RATE PATH
+      - strong [ref=e248]: structured-request-token
+    - generic [ref=e249]:
+      - generic:
+        - heading "PROTOTYPE INPUTS" [level=1]
+        - paragraph: SYNTHETIC DATA ONLY
+      - generic [ref=e250]:
+        - article [ref=e252]:
+          - strong [ref=e255]: PROTOTYPE INPUTS
+        - article [ref=e256]:
+          - strong [ref=e259]: 5 FAKE EMAILS
+        - article [ref=e260]:
+          - strong [ref=e263]: 1 SMALL RATE TABLE
+        - article [ref=e264]:
+          - strong [ref=e267]: SMALL PROTOTYPE
+        - article [ref=e268]:
+          - strong [ref=e271]: SYNTHETIC DATA ONLY
+      - strong [ref=e273]: rate-table-ledger
+    - generic [ref=e276]:
+      - generic:
+        - heading "KEEP IT INSPECTABLE" [level=1]
+        - paragraph: TRACK OUTCOMES MANUALLY
+      - generic [ref=e277]:
+        - article [ref=e279]:
+          - strong [ref=e282]: REVIEW RECORD
+        - article [ref=e283]:
+          - strong [ref=e286]: REQUEST TEXT
+        - article [ref=e287]:
+          - strong [ref=e290]: EXTRACTED FIELDS
+        - article [ref=e291]:
+          - strong [ref=e294]: DECISION STATUS
+        - article [ref=e295]:
+          - generic [ref=e296]:
+            - strong [ref=e298]: MANUAL OUTCOME
+            - text: ↗
+        - article [ref=e299]:
+          - strong [ref=e302]: AUTOMATE LATER
+      - strong [ref=e304]: numbered-quote-draft
+    - generic [ref=e305]:
+      - generic:
+        - heading "MAKE THE DECISION VISIBLE" [level=1]
+        - paragraph: BEFORE AUTOMATING IT
+      - generic [ref=e306]:
+        - article [ref=e308]:
+          - strong [ref=e311]: TEMPLATES
+        - article [ref=e312]:
+          - strong [ref=e315]: INTERPRETATION
+        - article [ref=e316]:
+          - strong [ref=e319]: VISIBLE DECISION
+        - article [ref=e320]:
+          - strong [ref=e323]: AUTOMATION
+        - article [ref=e324]:
+          - strong [ref=e327]: MAKE THE DECISION VISIBLE
+        - article [ref=e328]:
+          - generic [ref=e329]:
+            - strong [ref=e331]: BEFORE AUTOMATING IT
+            - text: ↗
+      - strong [ref=e333]: decision-aperture
+    - generic [ref=e334]: AI WORKFLOW CASE STUDY
+    - generic [ref=e335]: At week’s end, they scanned that number sequence again to count wins and losses. The client called it “copying information.”
+  - generic [ref=e336]:
+    - generic [ref=e337]:
+      - button "Play" [active] [ref=e362] [cursor=pointer]
+      - button "Restart" [ref=e339] [cursor=pointer]
+      - slider [ref=e340]: "27.750555"
+      - generic [ref=e341]: 27.8 / 121.0s
+      - button "Mute" [ref=e342] [cursor=pointer]
+    - generic [ref=e343]:
+      - button "S01 · Hook with the daily request volume without implying unprovided performance outcomes." [ref=e344] [cursor=pointer]
+      - button "S02 · Establish the first half of the repetitive manual workflow." [ref=e345] [cursor=pointer]
+      - button "S03 · Complete the manual sequence and reveal that more work follows." [ref=e346] [cursor=pointer]
+      - button "S04 · Show the weekly manual counting burden and frame the client's initial assumption." [ref=e347] [cursor=pointer]
+      - button "S05 · Deliver the central insight and visual pivot." [ref=e348] [cursor=pointer]
+      - button "S06 · Explain why free-text requests require interpretation." [ref=e349] [cursor=pointer]
+      - button "S07 · Show the causal gate between interpretation and pricing." [ref=e350] [cursor=pointer]
+      - button "S08 · Define the system architecture at the interpretation boundary." [ref=e351] [cursor=pointer]
+      - button "S09 · Demonstrate observable prototype extraction behavior with synthetic data." [ref=e352] [cursor=pointer]
+      - button "S10 · Prove the prototype's missing-field behavior without inventing completion." [ref=e353] [cursor=pointer]
+      - button "S11 · Show deterministic commercial processing after validation." [ref=e354] [cursor=pointer]
+      - 'button "S12 · Clarify responsibility boundaries between drafting and commercial calculation. [deterministic fallback: visual budget]" [ref=e355] [cursor=pointer]'
+      - button "S13 · Introduce the safe DIY prototype inputs." [ref=e356] [cursor=pointer]
+      - button "S14 · Demonstrate the DIY validation branch using only synthetic requests." [ref=e357] [cursor=pointer]
+      - button "S15 · Show the successful deterministic branch and draft creation." [ref=e358] [cursor=pointer]
+      - button "S16 · Preserve manual outcome tracking and inspectability in the prototype." [ref=e359] [cursor=pointer]
+      - 'button "S17 · Close with the narration''s exact decision principle without a talking head or CTA scene type. [deterministic fallback: visual budget]" [ref=e360] [cursor=pointer]'

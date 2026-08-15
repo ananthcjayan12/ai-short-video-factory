@@ -7,7 +7,10 @@ Approved narration (the master story and voice timeline):
 Approved graphics scenes:
 {graphics_scenes_json}
 
+Exact narration words inside each graphics scene, with scene-local timestamps:
+{graphics_scene_timing_json}
+
 Existing recorded screen scenes (proof moments; use only for continuity):
 {screen_scenes_json}
 
-Create a GraphicsPlan that turns this story into an editorial visual argument. For each scene, choose the visual thesis first, then the shell and motion grammar, then objects and timed actions. Make the payoff observable in the final third of each scene. The browser timeline must communicate the story even before MP4 rendering.
+Create a GraphicsPlan that turns this story into an editorial visual argument. For each scene, choose the visual thesis and one evolving visual world first, then the shell and motion grammar, then non-overlapping free-form object frames and word-anchored actions. Every non-hold action must use an exact consecutive `anchor_text` phrase and the correct `anchor_occurrence` from the supplied scene-local Whisper words. Clear obsolete visual states before reusing their space. Make the payoff observable in the final third of each scene. The browser timeline must communicate the story even before MP4 rendering.

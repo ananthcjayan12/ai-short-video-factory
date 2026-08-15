@@ -1,0 +1,10 @@
+Episode: {episode_id}
+Repair attempt: {attempt} of {max_attempts}
+
+Validated failure evidence:
+{issues_json}
+
+Current prototype source inventory and hashes:
+{source_inventory_json}
+
+Repair only the proven defects, preserve unrelated accepted work, and leave the complete corrected prototype in the current directory.

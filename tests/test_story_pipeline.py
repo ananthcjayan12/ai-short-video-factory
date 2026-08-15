@@ -221,6 +221,8 @@ def test_prototype_prompt_prioritizes_camera_ready_portrait_proof():
     assert "window.__svfSetTime(localSeconds, timelineCues)" in prompt
     assert '"local_start": 1.1' in prompt
     assert "exact consecutive `anchor_text` phrase" in prompt
+    assert 'data-testid="scene-<lowercase-scene-id>"' in prompt
+    assert "scene-S05` is invalid" in prompt
     assert "390x844" in prompt
 
 

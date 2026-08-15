@@ -12,7 +12,7 @@ from .orchestrator import PROVIDERS, provider_health
 from .pipeline import (
     align_voice, approve_director, bootstrap_reference_demo, generate_director_plan, generate_narration,
     generate_graphics_plan, generate_story_plan, import_talking_head, import_voice, mock_voice, prepare_timeline_preview,
-    record_demos, render_preview, run_prototype_builder,
+    record_demos, render_preview, repair_prototype, run_prototype_builder,
     write_prototype_builder_prompt,
 )
 from .project import ProjectStore
@@ -137,6 +137,12 @@ def prototype_prompt_cmd(episode_id: str, root: str = typer.Option("projects")):
 @app.command("build-prototype")
 def build_prototype_cmd(episode_id: str, root: str = typer.Option("projects")):
     typer.echo(run_prototype_builder(store(root), episode_id))
+
+
+@app.command("repair-prototype")
+def repair_prototype_cmd(episode_id: str, root: str = typer.Option("projects")):
+    report = repair_prototype(store(root), episode_id)
+    typer.echo(json.dumps(report.model_dump(mode="json"), indent=2))
 
 
 @app.command("bootstrap-pain001")

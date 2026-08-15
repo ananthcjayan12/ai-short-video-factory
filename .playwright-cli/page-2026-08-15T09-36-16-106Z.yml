@@ -1,0 +1,228 @@
+- generic [active]:
+  - generic [ref=f1e2]:
+    - generic [ref=f1e3]:
+      - generic:
+        - heading "EVERY MORNING" [level=1]
+        - paragraph: 30–40 NEW QUOTE REQUESTS
+      - generic [ref=f1e4]:
+        - article [ref=f1e6]:
+          - strong [ref=f1e9]: EVERY MORNING
+        - article [ref=f1e10]:
+          - strong [ref=f1e13]: SHARED INBOX
+        - article [ref=f1e14]:
+          - strong [ref=f1e17]: QUOTE REQUEST
+        - article [ref=f1e18]:
+          - strong [ref=f1e21]: NEW REQUESTS
+        - article [ref=f1e22]:
+          - generic [ref=f1e24]:
+            - strong [ref=f1e25]: 30–40
+            - generic [ref=f1e26]: new quote requests
+      - strong [ref=f1e28]: quote-envelope
+    - generic [ref=f1e29]:
+      - generic:
+        - heading "THE SAME SEQUENCE" [level=1]
+      - generic [ref=f1e30]:
+        - article [ref=f1e32]:
+          - strong [ref=f1e35]: READ EMAIL
+        - article [ref=f1e36]:
+          - strong [ref=f1e39]: RECURRING SEQUENCE
+        - article [ref=f1e40]:
+          - generic [ref=f1e41]:
+            - strong [ref=f1e43]: CUSTOMER LANGUAGE
+            - text: ↗
+        - article [ref=f1e44]:
+          - strong [ref=f1e47]: INTERPRET SHIPMENT
+        - article [ref=f1e48]:
+          - strong [ref=f1e51]: CHOOSE TEMPLATE
+      - strong [ref=f1e53]: quote-envelope
+    - generic [ref=f1e54]:
+      - generic:
+        - heading "MANUAL, STEP BY STEP" [level=1]
+        - paragraph: NOT FINISHED
+      - generic [ref=f1e55]:
+        - article [ref=f1e57]:
+          - strong [ref=f1e60]: MANUAL ROUTE
+        - article [ref=f1e61]:
+          - strong [ref=f1e64]: FIND RATE
+        - article [ref=f1e65]:
+          - strong [ref=f1e68]: "INCREMENT QUOTE #"
+        - article [ref=f1e69]:
+          - strong [ref=f1e72]: SEND REPLY
+        - article [ref=f1e73]:
+          - generic [ref=f1e74]:
+            - strong [ref=f1e76]: NOT FINISHED
+            - text: ↗
+      - strong [ref=f1e78]: workflow-ribbon
+    - generic [ref=f1e79]:
+      - generic:
+        - heading "WEEKLY RECOUNT" [level=1]
+        - paragraph: COUNT WINS + LOSSES
+      - generic [ref=f1e80]:
+        - article [ref=f1e82]:
+          - strong [ref=f1e85]: QUOTE LEDGER
+        - article [ref=f1e86]:
+          - strong [ref=f1e89]: NUMBER SEQUENCE
+        - article [ref=f1e90]:
+          - strong [ref=f1e93]: WINS + LOSSES
+        - article [ref=f1e94]:
+          - generic [ref=f1e95]:
+            - strong [ref=f1e97]: COUNT AGAIN
+            - text: ↗
+        - article [ref=f1e98]:
+          - generic [ref=f1e100]:
+            - strong [ref=f1e101]: “COPYING INFORMATION”
+            - generic [ref=f1e102]: Client's initial description
+      - strong [ref=f1e104]: quote-number-sequence
+    - generic [ref=f1e105]:
+      - generic:
+        - heading "NOT COPYING" [level=1]
+        - paragraph: DECIDING WHAT IT MEANS
+      - generic [ref=f1e106]:
+        - article [ref=f1e108]:
+          - strong [ref=f1e111]: CUSTOMER DETAILS
+        - article [ref=f1e112]:
+          - strong [ref=f1e115]: COPY
+        - article [ref=f1e116]:
+          - strong [ref=f1e119]: SHIPMENT RECORD
+        - article [ref=f1e120]:
+          - strong [ref=f1e123]: DECIDING MEANING
+        - article [ref=f1e124]:
+          - generic [ref=f1e125]:
+            - strong [ref=f1e127]: NOT COPYING
+            - text: ↗
+        - text: VS
+      - strong [ref=f1e129]: quote-envelope
+    - generic [ref=f1e130]:
+      - generic:
+        - heading "INCONSISTENT LANGUAGE" [level=1]
+        - paragraph: SIX FACTS TO RESOLVE
+      - generic [ref=f1e131]:
+        - article [ref=f1e133]:
+          - strong [ref=f1e136]: CUSTOMER LANGUAGE
+        - article [ref=f1e137]:
+          - strong [ref=f1e140]: ORIGIN
+        - article [ref=f1e141]:
+          - strong [ref=f1e144]: DESTINATION
+        - article [ref=f1e145]:
+          - strong [ref=f1e148]: CARGO
+        - article [ref=f1e149]:
+          - strong [ref=f1e152]: MODE
+        - article [ref=f1e153]:
+          - strong [ref=f1e156]: WEIGHT
+        - article [ref=f1e157]:
+          - strong [ref=f1e160]: DATES
+      - strong [ref=f1e162]: quote-envelope
+    - generic [ref=f1e163]:
+      - generic:
+        - heading "MISSING FACT?" [level=1]
+        - paragraph: ASK ONE FOLLOW-UP
+      - generic [ref=f1e164]:
+        - article [ref=f1e166]:
+          - strong [ref=f1e169]: SHIPMENT RECORD
+        - article [ref=f1e170]:
+          - strong [ref=f1e173]: "MISSING: WEIGHT"
+        - article [ref=f1e174]:
+          - strong [ref=f1e177]: REQUIRED FACTS
+        - article [ref=f1e178]:
+          - strong [ref=f1e181]: ASK ONE FOLLOW-UP
+        - article [ref=f1e182]:
+          - strong [ref=f1e185]: WHAT IS THE WEIGHT?
+        - article [ref=f1e186]:
+          - strong [ref=f1e189]: PRICING WAITS
+      - strong [ref=f1e191]: shipment-record
+    - generic [ref=f1e192]:
+      - generic:
+        - heading "SPLIT THE WORKFLOW" [level=1]
+        - paragraph: "AI: INTERPRET • CODE: EXECUTE"
+      - generic [ref=f1e193]:
+        - article [ref=f1e195]:
+          - strong [ref=f1e198]: WORKFLOW
+        - article [ref=f1e199]:
+          - strong [ref=f1e202]: "AI: INTERPRET"
+        - article [ref=f1e203]:
+          - strong [ref=f1e206]: HANDOFF
+        - article [ref=f1e207]:
+          - strong [ref=f1e210]: STRUCTURED REQUEST
+        - article [ref=f1e211]:
+          - strong [ref=f1e214]: "CODE: EXECUTE"
+      - strong [ref=f1e216]: shipment-record
+    - generic [ref=f1e217]:
+      - generic:
+        - heading "SEPARATE RESPONSIBILITIES" [level=1]
+        - paragraph: MODEL NEVER INVENTS A RATE
+      - generic [ref=f1e218]:
+        - article [ref=f1e220]:
+          - strong [ref=f1e223]: STRUCTURED REQUEST
+        - article [ref=f1e224]:
+          - strong [ref=f1e227]: APPROVED RATE TABLE
+        - article [ref=f1e228]:
+          - strong [ref=f1e231]: "CODE: CALCULATE"
+        - article [ref=f1e232]:
+          - strong [ref=f1e235]: FIXED PRICE
+        - article [ref=f1e236]:
+          - strong [ref=f1e239]: "AI: DRAFT EMAIL"
+        - article [ref=f1e240]:
+          - strong [ref=f1e243]: NO AI RATE PATH
+      - strong [ref=f1e245]: structured-request-token
+    - generic [ref=f1e246]:
+      - generic:
+        - heading "PROTOTYPE INPUTS" [level=1]
+        - paragraph: SYNTHETIC DATA ONLY
+      - generic [ref=f1e247]:
+        - article [ref=f1e249]:
+          - strong [ref=f1e252]: PROTOTYPE INPUTS
+        - article [ref=f1e253]:
+          - strong [ref=f1e256]: 5 FAKE EMAILS
+        - article [ref=f1e257]:
+          - strong [ref=f1e260]: 1 SMALL RATE TABLE
+        - article [ref=f1e261]:
+          - strong [ref=f1e264]: SMALL PROTOTYPE
+        - article [ref=f1e265]:
+          - strong [ref=f1e268]: SYNTHETIC DATA ONLY
+      - strong [ref=f1e270]: rate-table-ledger
+    - generic [ref=f1e271]:
+      - generic:
+        - heading "KEEP IT INSPECTABLE" [level=1]
+        - paragraph: TRACK OUTCOMES MANUALLY
+      - generic [ref=f1e272]:
+        - article [ref=f1e274]:
+          - strong [ref=f1e277]: REVIEW RECORD
+        - article [ref=f1e278]:
+          - strong [ref=f1e281]: REQUEST TEXT
+        - article [ref=f1e282]:
+          - strong [ref=f1e285]: EXTRACTED FIELDS
+        - article [ref=f1e286]:
+          - strong [ref=f1e289]: DECISION STATUS
+        - article [ref=f1e290]:
+          - generic [ref=f1e291]:
+            - strong [ref=f1e293]: MANUAL OUTCOME
+            - text: ↗
+        - article [ref=f1e294]:
+          - strong [ref=f1e297]: AUTOMATE LATER
+      - strong [ref=f1e299]: numbered-quote-draft
+    - generic [ref=f1e300]:
+      - generic:
+        - heading "MAKE THE DECISION VISIBLE" [level=1]
+        - paragraph: BEFORE AUTOMATING IT
+      - generic [ref=f1e301]:
+        - article [ref=f1e303]:
+          - strong [ref=f1e306]: TEMPLATES
+        - article [ref=f1e307]:
+          - strong [ref=f1e310]: INTERPRETATION
+        - article [ref=f1e311]:
+          - strong [ref=f1e314]: VISIBLE DECISION
+        - article [ref=f1e315]:
+          - strong [ref=f1e318]: AUTOMATION
+        - article [ref=f1e319]:
+          - strong [ref=f1e322]: MAKE THE DECISION VISIBLE
+        - article [ref=f1e323]:
+          - generic [ref=f1e324]:
+            - strong [ref=f1e326]: BEFORE AUTOMATING IT
+            - text: ↗
+      - strong [ref=f1e328]: decision-aperture
+  - generic [ref=f1e329]:
+    - button "Previous" [ref=f1e330] [cursor=pointer]
+    - button "Pause" [ref=f1e331] [cursor=pointer]
+    - button "Next" [ref=f1e332] [cursor=pointer]
+    - slider [ref=f1e333]: "0.100002"
+    - generic [ref=f1e334]: 0.1 / 121.0s

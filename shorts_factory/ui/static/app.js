@@ -7,6 +7,8 @@ const state = {
   logs: [],
   activeJob: null,
   headScene: null,
+  filledQuery: "",
+  voiceCatalogs: {},
 };
 
 const $ = (selector, root = document) => root.querySelector(selector);
@@ -34,6 +36,13 @@ function shortDate(value) {
   } catch {
     return "Recently";
   }
+}
+
+function durationLabel(value) {
+  const seconds = Math.round(Number(value) || 0);
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  return minutes ? `${minutes}:${String(remainder).padStart(2, "0")}` : `${seconds}s`;
 }
 
 async function api(path, options = {}) {
@@ -66,7 +75,13 @@ function showLoading() {
 }
 
 function renderSidebar() {
-  const episodes = state.dashboard?.episodes || [];
+  const allEpisodes = state.dashboard?.episodes || [];
+  const episodes = allEpisodes.filter((episode) => !episode.is_filled_episode);
+  const filledEpisodes = state.dashboard?.filled_episodes || [];
+  const query = state.filledQuery.trim().toLowerCase();
+  const visibleFilled = query
+    ? filledEpisodes.filter((episode) => `${episode.source_id} ${episode.title} ${episode.industry}`.toLowerCase().includes(query))
+    : filledEpisodes;
   $("#episode-count").textContent = episodes.length;
   $("#episode-list").innerHTML = episodes.length
     ? episodes.map((episode) => `
@@ -79,10 +94,27 @@ function renderSidebar() {
         </span>
       </button>
     `).join("")
-    : `<div class="empty-card">No episodes yet.</div>`;
+    : `<div class="sidebar-empty">No standalone episodes yet.</div>`;
+
+  $("#filled-episode-count").textContent = filledEpisodes.length;
+  $("#filled-episode-list").innerHTML = visibleFilled.length
+    ? visibleFilled.map((episode) => `
+      <button class="episode-nav-item filled-nav-item ${episode.episode_id === state.selectedId ? "active" : ""}"
+              data-filled-episode="${escapeHtml(episode.source_id)}" type="button">
+        <strong>${escapeHtml(episode.title)}</strong>
+        <span class="episode-nav-meta">
+          <span>${escapeHtml(episode.source_id)} · ${escapeHtml(episode.industry)}</span>
+          <span class="filled-status ${episode.imported ? "imported" : ""}">${episode.imported ? `${episode.progress}%` : "Ready"}</span>
+        </span>
+      </button>
+    `).join("")
+    : `<div class="sidebar-empty">No matching stories.</div>`;
 
   $$("[data-episode]").forEach((button) => {
     button.addEventListener("click", () => selectEpisode(button.dataset.episode));
+  });
+  $$("[data-filled-episode]").forEach((button) => {
+    button.addEventListener("click", () => openFilledEpisode(button.dataset.filledEpisode));
   });
 }
 
@@ -157,7 +189,7 @@ function voiceCard(detail) {
       </div>
       ${voice && artifact ? `
         <audio class="audio-player" controls preload="metadata" src="${escapeHtml(artifact.url)}"></audio>
-        <div class="voice-meta"><span>${escapeHtml(label(voice.source))} source · ${aligned ? "word-aligned" : "alignment required"}</span><strong>${Number(voice.duration_seconds).toFixed(1)} seconds</strong></div>
+        <div class="voice-meta"><span>${escapeHtml(label(voice.source))} source · ${aligned ? "word-aligned" : "alignment required"}${voice.voice_id ? ` · ${escapeHtml(voice.provider)} / ${escapeHtml(voice.voice_id)}${voice.chunk_count ? ` · ${Number(voice.chunk_count)} batches` : ""}` : ""}</span><strong>${Number(voice.duration_seconds).toFixed(1)} seconds</strong></div>
       ` : `
         <div class="upload-zone"><p>Import your final voice, or create a silent timing track while developing.</p><button class="button button-quiet button-small" data-upload-voice type="button">Choose audio file</button></div>
       `}
@@ -208,6 +240,7 @@ function assetsCard(detail) {
   const prototype = detail.artifacts.find((item) => item.kind === "prototype");
   const graphics = detail.artifacts.find((item) => item.kind === "graphics");
   const media = detail.artifacts.filter((item) => ["audio", "video"].includes(item.kind));
+  const graphicsTheme = detail.brief.graphics_theme || "editorial";
   return `
     <article class="card">
       <div class="card-head">
@@ -222,6 +255,16 @@ function assetsCard(detail) {
       <div class="card-actions" style="justify-content:flex-start;margin-bottom:14px">
         <button class="button button-quiet button-small" data-action="prototype-prompt" ${approved ? "" : "disabled"} type="button">Prepare build brief</button>
         <button class="button button-quiet button-small" data-action="build-prototype" ${approved ? "" : "disabled"} type="button">Build prototype</button>
+        <button class="button button-quiet button-small" data-action="repair-prototype" ${prototype && approved ? "" : "disabled"} type="button">Validate & repair</button>
+      </div>
+      <div class="graphics-theme-control">
+        <label for="graphics-theme-select"><span>Graphics theme</span>
+          <select id="graphics-theme-select" ${approved ? "" : "disabled"}>
+            <option value="editorial" ${graphicsTheme === "editorial" ? "selected" : ""}>Editorial documentary</option>
+            <option value="whiteboard" ${graphicsTheme === "whiteboard" ? "selected" : ""}>Whiteboard explainer</option>
+          </select>
+        </label>
+        <p>The selected theme is used consistently across the whole graphics package and is saved when you generate or regenerate.</p>
       </div>
       ${graphics ? `<div class="empty-card"><strong>Graphics package ready</strong>Inspectable scene contracts, individual HTML previews, and a master composition are ready for QA and rendering.</div>` : `<div class="empty-card"><strong>Graphics package not generated</strong>Create the scene outline, choreography, object/action contracts, and inspectable HTML previews before rendering.</div>`}
       ${media.length ? `<div class="asset-list">${media.map((item) => `
@@ -264,13 +307,18 @@ function qaCard(detail) {
 
 function briefCard(detail) {
   const brief = detail.brief;
+  const durationEditable = detail.state.stage === "input";
   return `
     <article class="card">
       <div class="card-head"><div class="card-title"><span class="section-number">00</span><div><h2>Production brief</h2><p class="card-subtitle">Case facts with synthetic demo data by default.</p></div></div></div>
       <div class="brief-grid">
         <div class="brief-field"><span>Industry</span><p>${escapeHtml(brief.industry)}</p></div>
         <div class="brief-field"><span>Viewer</span><p>${escapeHtml(brief.role)}</p></div>
+        <div class="brief-field wide"><span>Target duration</span><div class="duration-editor"><div class="input-suffix"><input id="episode-duration" type="number" min="15" max="480" step="1" value="${Number(brief.target_seconds)}" ${durationEditable ? "" : "disabled"} /><b>sec</b></div><button class="button button-dark button-small" id="save-episode-duration" type="button" ${durationEditable ? "" : "disabled"}>Save duration</button></div><small>${durationEditable ? `Currently ${durationLabel(brief.target_seconds)} · choose 15 seconds to 8 minutes.` : "Archive from Narration before changing the master timeline."}</small></div>
         <div class="brief-field wide"><span>Pain point</span><p>${escapeHtml(brief.pain_point)}</p></div>
+        ${brief.backend_summary?.length ? `<div class="brief-field wide"><span>Backend idea</span><ul class="brief-list">${brief.backend_summary.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
+        ${brief.viewer_diy?.length ? `<div class="brief-field wide"><span>Viewer DIY</span>${brief.suggested_stack ? `<p><strong>Stack:</strong> ${escapeHtml(brief.suggested_stack)}</p>` : ""}<ol class="brief-list">${brief.viewer_diy.map((item) => `<li>${escapeHtml(item.replace(/^\d+\.\s*/, ""))}</li>`).join("")}</ol></div>` : ""}
+        ${brief.source_narration ? `<div class="brief-field wide source-field"><span>Supplied narration source</span><p class="source-reference">${escapeHtml(brief.source_reference || "Operator-supplied source")}</p><p class="source-narration">${escapeHtml(brief.source_narration)}</p></div>` : ""}
         <div class="brief-field"><span>Format</span><p>${brief.width} × ${brief.height} · ${brief.fps} fps</p></div>
         <div class="brief-field"><span>Case type</span><p>${escapeHtml(label(brief.case_nature || "synthetic_demo"))}</p></div>
         <div class="brief-field"><span>Demo data policy</span><p>${brief.synthetic_data_only ? "Synthetic data only" : "Operator supplied"}</p></div>
@@ -307,6 +355,7 @@ function orchestrationCard() {
     const currentProvider = mapping.providers[route.provider] || {};
     const models = currentProvider.models_by_capability?.[route.capability] || currentProvider.models || [route.model];
     const efforts = currentProvider.reasoning_efforts || [];
+    const isAudio = route.capability === "audio";
     return `
       <div class="model-row" data-model-task="${escapeHtml(taskId)}">
         <div><strong>${escapeHtml(label(taskId))}</strong><span>${escapeHtml(route.group)} · ${escapeHtml(route.capability)}</span></div>
@@ -319,12 +368,17 @@ function orchestrationCard() {
         <select data-reasoning-select aria-label="Reasoning effort for ${escapeHtml(taskId)}" ${efforts.length ? "" : "disabled"}>
           ${(efforts.length ? efforts : ["n/a"]).map((effort) => `<option value="${escapeHtml(effort)}" ${effort === route.reasoning_effort ? "selected" : ""}>${escapeHtml(effort)} reasoning</option>`).join("")}
         </select>
+        <select data-voice-select aria-label="Voice for ${escapeHtml(taskId)}" ${isAudio ? "" : "disabled"}>
+          ${isAudio
+            ? `<option value="${escapeHtml(route.voice_id || "")}" selected>${escapeHtml(route.voice_id || "Choose a voice")}</option>`
+            : `<option value="">No voice</option>`}
+        </select>
       </div>`;
   }).join("");
   return `
     <article class="card orchestration-card">
       <div class="card-head">
-        <div class="card-title"><span class="section-number">AI</span><div><h2>Model orchestration</h2><p class="card-subtitle">Each task is routed only to a compatible provider. Saved per episode.</p></div></div>
+        <div class="card-title"><span class="section-number">AI</span><div><h2>Model orchestration</h2><p class="card-subtitle">Each task is routed only to a compatible provider. TTS model and voice are saved per episode.</p></div></div>
         <button class="button button-dark button-small" id="save-model-map" type="button">Save routing</button>
       </div>
       <div class="model-list">${taskRows}</div>
@@ -408,7 +462,7 @@ function bindWorkspaceEvents() {
     });
   });
   $$("[data-provider-select]", $("#workspace-view")).forEach((select) => {
-    select.addEventListener("change", () => {
+    select.addEventListener("change", async () => {
       const row = select.closest("[data-model-task]");
       const modelSelect = $("[data-model-select]", row);
       const reasoningSelect = $("[data-reasoning-select]", row);
@@ -419,11 +473,62 @@ function bindWorkspaceEvents() {
       const efforts = provider.reasoning_efforts || [];
       reasoningSelect.disabled = !efforts.length;
       reasoningSelect.innerHTML = (efforts.length ? efforts : ["n/a"]).map((effort) => `<option value="${escapeHtml(effort)}">${escapeHtml(effort)} reasoning</option>`).join("");
+      if (capability === "audio") {
+        await refreshVoiceSelect(row, select.value, provider.default_voice_id || "");
+      }
     });
   });
+  $$('[data-model-task]', $('#workspace-view')).forEach((row) => {
+    const route = state.models.tasks[row.dataset.modelTask];
+    if (route?.capability === "audio") refreshVoiceSelect(row, route.provider, route.voice_id || "");
+  });
   $("#save-project-policy")?.addEventListener("click", saveProjectPolicy);
+  $("#save-episode-duration")?.addEventListener("click", saveEpisodeDuration);
   $("#save-model-map")?.addEventListener("click", saveModelMap);
   $("#reset-episode")?.addEventListener("click", resetEpisode);
+}
+
+async function loadVoiceCatalog(providerId) {
+  if (!state.models.providers[providerId]?.supports_voice_catalog) return [];
+  if (!state.voiceCatalogs[providerId]) {
+    state.voiceCatalogs[providerId] = api(`/api/tts/voices/${encodeURIComponent(providerId)}`)
+      .then((result) => result.voices || [])
+      .catch((error) => ({ error: error.message }));
+  }
+  return state.voiceCatalogs[providerId];
+}
+
+async function refreshVoiceSelect(row, providerId, selectedVoiceId = "") {
+  const select = $("[data-voice-select]", row);
+  if (!select) return;
+  const provider = state.models.providers[providerId] || {};
+  if (!provider.supports_voice_catalog) {
+    select.disabled = true;
+    select.innerHTML = `<option value="">${provider.mode === "manual" ? "External voice" : "Provider-managed voice"}</option>`;
+    return;
+  }
+  select.disabled = true;
+  select.innerHTML = `<option value="${escapeHtml(selectedVoiceId)}">Loading voices…</option>`;
+  const catalog = await loadVoiceCatalog(providerId);
+  if (catalog?.error) {
+    select.innerHTML = `<option value="${escapeHtml(selectedVoiceId)}">${escapeHtml(selectedVoiceId || catalog.error)}</option>`;
+    select.title = catalog.error;
+    select.disabled = !selectedVoiceId;
+    return;
+  }
+  const known = new Set(catalog.map((voice) => voice.voice_id));
+  const options = [];
+  if (!selectedVoiceId) options.push(`<option value="" selected disabled>Choose a voice</option>`);
+  if (selectedVoiceId && !known.has(selectedVoiceId)) {
+    options.push(`<option value="${escapeHtml(selectedVoiceId)}" selected>${escapeHtml(selectedVoiceId)} (configured)</option>`);
+  }
+  options.push(...catalog.map((voice) => {
+    const detail = voice.description ? ` — ${voice.description}` : "";
+    return `<option value="${escapeHtml(voice.voice_id)}" ${voice.voice_id === selectedVoiceId ? "selected" : ""}>${escapeHtml(voice.name + detail)}</option>`;
+  }));
+  select.innerHTML = options.join("");
+  select.disabled = false;
+  select.title = `${catalog.length} voices available`;
 }
 
 async function loadDashboard(selectFirst = true) {
@@ -465,6 +570,42 @@ async function selectEpisode(episodeId) {
   $(".sidebar").classList.remove("open");
   showLoading();
   await loadEpisode(episodeId);
+}
+
+async function openFilledEpisode(sourceId) {
+  const source = state.dashboard?.filled_episodes?.find((episode) => episode.source_id === sourceId);
+  if (!source) return;
+  $(".sidebar").classList.remove("open");
+  showLoading();
+  try {
+    if (source.imported) {
+      await loadEpisode(source.episode_id);
+      return;
+    }
+    const detail = await api(`/api/filled-episodes/${encodeURIComponent(sourceId)}/create`, { method: "POST" });
+    state.selectedId = detail.brief.episode_id;
+    showToast(`${sourceId} initialized`);
+    await loadDashboard(false);
+  } catch (error) {
+    showToast(error.message, true);
+    await loadDashboard(false);
+  }
+}
+
+async function importAllFilledEpisodes() {
+  const button = $("#import-filled-episodes");
+  button.disabled = true;
+  button.textContent = "Adding…";
+  try {
+    const result = await api("/api/filled-episodes/import", { method: "POST" });
+    showToast(`${result.created.length} initialized; ${result.existing.length} already available`);
+    await loadDashboard(false);
+  } catch (error) {
+    showToast(error.message, true);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Add all";
+  }
 }
 
 function renderJob(job) {
@@ -526,6 +667,16 @@ async function startAction(action) {
   let body = {};
   if (action === "mock-voice") body.seconds = state.detail?.brief?.target_seconds || 58;
   try {
+    if (action === "generate-graphics") {
+      const selectedTheme = $("#graphics-theme-select")?.value || "editorial";
+      if (selectedTheme !== state.detail?.brief?.graphics_theme) {
+        state.detail = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/graphics-theme`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ graphics_theme: selectedTheme }),
+        });
+      }
+    }
     const job = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/actions/${encodeURIComponent(action)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -612,6 +763,32 @@ async function saveProjectPolicy() {
   }
 }
 
+async function saveEpisodeDuration() {
+  const input = $("#episode-duration");
+  const targetSeconds = Number(input?.value);
+  if (!Number.isFinite(targetSeconds) || targetSeconds < 15 || targetSeconds > 480) {
+    showToast("Choose a duration between 15 and 480 seconds.", true);
+    input?.focus();
+    return;
+  }
+  const button = $("#save-episode-duration");
+  button.disabled = true;
+  button.textContent = "Saving…";
+  try {
+    state.detail = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/duration`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ target_seconds: targetSeconds }),
+    });
+    showToast(`Target duration set to ${durationLabel(targetSeconds)}`);
+    await loadDashboard(false);
+  } catch (error) {
+    showToast(error.message, true);
+    button.disabled = false;
+    button.textContent = "Save duration";
+  }
+}
+
 async function saveModelMap() {
   const tasks = {};
   $$("[data-model-task]", $("#workspace-view")).forEach((row) => {
@@ -620,6 +797,8 @@ async function saveModelMap() {
       provider: $("[data-provider-select]", row).value,
       model: $("[data-model-select]", row).value,
       ...(reasoning && !reasoning.disabled ? { reasoning_effort: reasoning.value } : {}),
+      ...($("[data-voice-select]", row) && !$("[data-voice-select]", row).disabled && $("[data-voice-select]", row).value
+        ? { voice_id: $("[data-voice-select]", row).value } : {}),
     };
   });
   try {
@@ -694,6 +873,11 @@ function openCreateDialog() {
 }
 
 $("#new-episode-button").addEventListener("click", openCreateDialog);
+$("#filled-episode-search").addEventListener("input", (event) => {
+  state.filledQuery = event.target.value;
+  renderSidebar();
+});
+$("#import-filled-episodes").addEventListener("click", importAllFilledEpisodes);
 $$('[data-open-create]').forEach((button) => button.addEventListener("click", openCreateDialog));
 $("#create-submit").addEventListener("click", createEpisode);
 $("#reference-demo-button").addEventListener("click", openReferenceDemo);

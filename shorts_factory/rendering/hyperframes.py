@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from ..io import load_model, write_json
-from ..models import DirectorPlan, VoiceMetadata
+from ..models import DirectorPlan, EpisodeBrief, VoiceMetadata
 from ..node_runtime import node_environment
 from ..progress import emit
 from .composition import build
@@ -72,9 +72,9 @@ def _valid_video(path: Path) -> bool:
     return r.returncode == 0 and bool(r.stdout.strip())
 
 
-def _render_one(composition: Path, output: Path) -> None:
+def _render_one(composition: Path, output: Path, *, fps: int) -> None:
     environment = node_environment()
-    result = subprocess.run([*binary(environment), "render", "-c", composition.name, "-o", str(output.resolve())],
+    result = subprocess.run([*binary(environment), "render", "-c", composition.name, "-o", str(output.resolve()), "--fps", str(fps)],
                             cwd=composition.parent, capture_output=True, text=True, timeout=14400, env=environment)
     output.with_suffix(".render.log").write_text((result.stdout or "") + "\n" + (result.stderr or ""), encoding="utf-8")
     if result.returncode != 0 or not output.exists():
@@ -98,6 +98,7 @@ def _concat(chunks: list[Path], output: Path) -> None:
 
 def render(project_dir: Path, *, preview: bool, width: int, height: int, output: Path) -> dict[str, Any]:
     plan = load_model(project_dir / "03_director/director_plan.approved.json", DirectorPlan)
+    brief = load_model(project_dir / "00_input/episode_brief.json", EpisodeBrief)
     output.parent.mkdir(parents=True, exist_ok=True)
     emit(5, "Validating the HyperFrames composition", task="composition_renderer")
     lint = validate(project_dir, preview=preview, width=width, height=height)
@@ -116,7 +117,7 @@ def render(project_dir: Path, *, preview: bool, width: int, height: int, output:
             report_windows.append({"index": i, "window": window, "status": "resumed", "path": str(chunk)})
             continue
         composition = build(project_dir, preview=preview, width=width, height=height, window=window, composition_name=f"chunks/part-{i:03d}")
-        _render_one(composition, chunk)
+        _render_one(composition, chunk, fps=brief.fps)
         report_windows.append({"index": i, "window": window, "status": "rendered", "path": str(chunk)})
     emit(82, "Joining rendered chunks", task="composition_renderer")
     video_only = output.parent / f"{output.stem}.video.mp4"

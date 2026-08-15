@@ -23,9 +23,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 
 from ..io import load_model, read_json, write_json
+from ..integrations import list_tts_voices
+from ..filled_episodes import filled_episode_catalog, find_filled_episode, materialize_filled_episode
 from ..models import (
-    DirectorPlan, EpisodeBrief, EpisodeStage, EpisodeState, Narration, NarrationQualityReport,
-    ProductionJob, ProgressEvent, ProjectSettings, PromptInvocation, TaskModelSelection, VoiceMetadata,
+    DirectorPlan, EpisodeBrief, EpisodeStage, EpisodeState, FilledEpisode, GraphicsTheme, Narration, NarrationQualityReport,
+    ProductionJob, ProgressEvent, ProjectSettings, PromptInvocation, TaskModelSelection, TTSVoiceCatalog, VoiceMetadata,
 )
 from ..orchestrator import PROVIDERS, TASKS, default_config, provider_health, provider_models, resolve_task
 from ..pipeline import (
@@ -42,6 +44,7 @@ from ..pipeline import (
     record_demos,
     render_final,
     render_preview,
+    repair_prototype,
     run_prototype_builder,
     _prototype_activity,
     write_prototype_builder_prompt,
@@ -77,7 +80,7 @@ class EpisodeCreateRequest(BaseModel):
     pain_point: str = Field(min_length=8)
     industry: str = Field(default="Small Business", min_length=2, max_length=100)
     role: str = Field(default="Owner", min_length=2, max_length=100)
-    target_seconds: float = Field(default=58.0, ge=15, le=180)
+    target_seconds: float = Field(default=58.0, ge=15, le=480)
     case_nature: Literal["real", "hypothetical", "synthetic_demo"] = "synthetic_demo"
     backend_summary: list[str] = Field(default_factory=list, max_length=12)
     viewer_diy: list[str] = Field(default_factory=list, max_length=12)
@@ -100,6 +103,22 @@ class EpisodeSummary(BaseModel):
     approved_director: bool
     approved_final: bool
     updated_at: str
+    is_filled_episode: bool = False
+
+
+class FilledEpisodeSummary(BaseModel):
+    source_id: str
+    episode_id: str
+    title: str
+    industry: str
+    imported: bool
+    stage: str | None = None
+    progress: int = Field(default=0, ge=0, le=100)
+
+
+class FilledEpisodeImportResult(BaseModel):
+    created: list[str] = Field(default_factory=list)
+    existing: list[str] = Field(default_factory=list)
 
 
 class Artifact(BaseModel):
@@ -142,6 +161,7 @@ class ActionSpec(BaseModel):
 
 class DashboardResponse(BaseModel):
     episodes: list[EpisodeSummary]
+    filled_episodes: list[FilledEpisodeSummary]
     providers: list[ProviderStatus]
     actions: list[ActionSpec]
     tasks: list[dict[str, Any]]
@@ -152,8 +172,16 @@ class ProjectSettingsRequest(BaseModel):
     include_talking_head: bool
 
 
+class EpisodeDurationRequest(BaseModel):
+    target_seconds: float = Field(ge=15, le=480)
+
+
+class EpisodeGraphicsThemeRequest(BaseModel):
+    graphics_theme: GraphicsTheme
+
+
 class ActionRequest(BaseModel):
-    seconds: float = Field(default=58.0, ge=5, le=300)
+    seconds: float = Field(default=58.0, ge=5, le=480)
 
 
 class UploadResult(BaseModel):
@@ -183,6 +211,7 @@ ACTION_SPECS: dict[str, ActionSpec] = {
     "approve-director": ActionSpec(action="approve-director", label="Approve director plan", capability="structured", stage="direction", task="director_qa"),
     "prototype-prompt": ActionSpec(action="prototype-prompt", label="Prepare prototype brief", capability="code", stage="assets", task="prototype_builder"),
     "build-prototype": ActionSpec(action="build-prototype", label="Build prototype", capability="code", stage="assets", task="prototype_builder"),
+    "repair-prototype": ActionSpec(action="repair-prototype", label="Repair prototype", capability="code", stage="assets", task="prototype_repair"),
     "record-demos": ActionSpec(action="record-demos", label="Record screen demos", capability="browser", stage="assets", task="screen_recorder"),
     "generate-graphics": ActionSpec(action="generate-graphics", label="Generate graphics", capability="structured", stage="assets", task="graphics_builder"),
     "prepare-preview": ActionSpec(action="prepare-preview", label="Build timeline preview", capability="render", stage="assembly", task="composition_preview"),
@@ -233,6 +262,7 @@ def _summary(brief: EpisodeBrief, state: EpisodeState, project: Path) -> Episode
         approved_director=state.approved_director,
         approved_final=state.approved_final,
         updated_at=_updated_at(project),
+        is_filled_episode=brief.is_filled_episode,
     )
 
 
@@ -365,6 +395,8 @@ def _execute_action(episode_id: str, action: str, request: ActionRequest) -> Any
         return write_prototype_builder_prompt(store, episode_id)
     if action == "build-prototype":
         return run_prototype_builder(store, episode_id)
+    if action == "repair-prototype":
+        return repair_prototype(store, episode_id)
     if action == "record-demos":
         return record_demos(store, episode_id)
     if action == "generate-graphics":
@@ -457,6 +489,7 @@ class JobQueue:
             "approve-director": ["approve-director", job.episode_id],
             "prototype-prompt": ["prototype-prompt", job.episode_id],
             "build-prototype": ["build-prototype", job.episode_id],
+            "repair-prototype": ["repair-prototype", job.episode_id],
             "record-demos": ["record-demos", job.episode_id],
             "generate-graphics": ["generate-graphics", job.episode_id],
             "prepare-preview": ["prepare-preview", job.episode_id],
@@ -632,6 +665,13 @@ class JobQueue:
         }.get(job.action)
         if job.action == "build-prototype":
             expected = _prototype_entrypoint(project)
+        if job.action == "repair-prototype":
+            expected = project / "_requests/prototype_repair_report.json"
+            if expected.is_file():
+                try:
+                    return read_json(expected).get("status") in {"not_needed", "repaired"}
+                except Exception:
+                    return False
         if job.action == "approve-final":
             try:
                 return _store().state(job.episode_id).approved_final
@@ -743,6 +783,19 @@ def dashboard() -> DashboardResponse:
         except Exception:
             continue
     episodes.sort(key=lambda item: item.updated_at, reverse=True)
+    episode_summaries = {episode.episode_id: episode for episode in episodes}
+    filled_episodes = []
+    for episode in filled_episode_catalog().episodes:
+        production = episode_summaries.get(episode.episode_id)
+        filled_episodes.append(FilledEpisodeSummary(
+            source_id=episode.source_id,
+            episode_id=episode.episode_id,
+            title=episode.title,
+            industry=episode.industry,
+            imported=production is not None,
+            stage=production.stage if production else None,
+            progress=production.progress if production else 0,
+        ))
     providers = []
     for provider_id, provider in PROVIDERS.items():
         health = provider_health(provider_id)
@@ -754,11 +807,47 @@ def dashboard() -> DashboardResponse:
         ))
     return DashboardResponse(
         episodes=episodes,
+        filled_episodes=filled_episodes,
         providers=providers,
         actions=list(ACTION_SPECS.values()),
         tasks=TASKS,
         settings=store.settings(),
     )
+
+
+@app.get("/api/filled-episodes/{source_id}", response_model=FilledEpisode)
+def filled_episode_detail(source_id: str) -> FilledEpisode:
+    try:
+        return find_filled_episode(source_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Filled episode not found") from exc
+
+
+@app.post("/api/filled-episodes/{source_id}/create", response_model=EpisodeDetail, status_code=201)
+def create_filled_episode(source_id: str) -> EpisodeDetail:
+    try:
+        episode = find_filled_episode(source_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Filled episode not found") from exc
+    store = _store()
+    if store.project_dir(episode.episode_id).exists():
+        return _detail(episode.episode_id)
+    materialize_filled_episode(store, episode)
+    return _detail(episode.episode_id)
+
+
+@app.post("/api/filled-episodes/import", response_model=FilledEpisodeImportResult)
+def import_all_filled_episodes() -> FilledEpisodeImportResult:
+    store = _store()
+    created: list[str] = []
+    existing: list[str] = []
+    for episode in filled_episode_catalog().episodes:
+        if store.project_dir(episode.episode_id).exists():
+            existing.append(episode.episode_id)
+            continue
+        materialize_filled_episode(store, episode)
+        created.append(episode.episode_id)
+    return FilledEpisodeImportResult(created=created, existing=existing)
 
 
 @app.put("/api/project/settings", response_model=ProjectSettings)
@@ -774,6 +863,36 @@ def create_episode(request: EpisodeCreateRequest) -> EpisodeDetail:
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _detail(brief.episode_id)
+
+
+@app.put("/api/episodes/{episode_id}/duration", response_model=EpisodeDetail)
+def update_episode_duration(episode_id: str, request: EpisodeDurationRequest) -> EpisodeDetail:
+    store = _store()
+    project = store.project_dir(episode_id)
+    if not project.exists():
+        raise HTTPException(status_code=404, detail="Episode not found")
+    state = store.state(episode_id)
+    if state.stage != EpisodeStage.INPUT or (project / "01_narration/narration.json").exists():
+        raise HTTPException(
+            status_code=409,
+            detail="Duration can only change before narration. Archive from Narration first to rebuild the timeline safely.",
+        )
+    brief = store.brief(episode_id).model_copy(update={"target_seconds": request.target_seconds})
+    write_json(project / "00_input/episode_brief.json", brief)
+    return _detail(episode_id)
+
+
+@app.put("/api/episodes/{episode_id}/graphics-theme", response_model=EpisodeDetail)
+def update_episode_graphics_theme(
+    episode_id: str, request: EpisodeGraphicsThemeRequest,
+) -> EpisodeDetail:
+    store = _store()
+    project = store.project_dir(episode_id)
+    if not project.exists():
+        raise HTTPException(status_code=404, detail="Episode not found")
+    brief = store.brief(episode_id).model_copy(update={"graphics_theme": request.graphics_theme})
+    write_json(project / "00_input/episode_brief.json", brief)
+    return _detail(episode_id)
 
 
 @app.post("/api/episodes/reference-demo", response_model=EpisodeDetail, status_code=201)
@@ -825,6 +944,7 @@ def episode_models(episode_id: str) -> dict[str, Any]:
         routes[task_id] = {
             "provider": resolved["provider"], "model": resolved["model"],
             "reasoning_effort": resolved.get("reasoning_effort"),
+            "voice_id": resolved.get("voice_id") if resolved["capability"] == "audio" else None,
             "fallback_provider": resolved.get("fallback_provider"),
             "fallback_model": resolved.get("fallback_model"),
             "capability": resolved["capability"], "group": task["group"],
@@ -835,10 +955,24 @@ def episode_models(episode_id: str) -> dict[str, Any]:
             "models_by_capability": provider.get("models_by_capability", {}),
             "reasoning_efforts": provider.get("reasoning_efforts", []),
             "capabilities": provider["capabilities"], "mode": provider["mode"],
+            "supports_voice_catalog": provider_id in {"gemini", "elevenlabs"},
+            "default_voice_id": provider.get("voice_id", ""),
         }
         for provider_id, provider in PROVIDERS.items()
     }
     return {"tasks": routes, "providers": providers}
+
+
+@app.get("/api/tts/voices/{provider_id}", response_model=TTSVoiceCatalog)
+def tts_voices(provider_id: str) -> TTSVoiceCatalog:
+    provider = PROVIDERS.get(provider_id)
+    if not provider or "audio" not in provider["capabilities"]:
+        raise HTTPException(status_code=404, detail=f"Unknown TTS provider: {provider_id}")
+    try:
+        voices = list_tts_voices(provider_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return TTSVoiceCatalog(provider=provider_id, voices=voices)
 
 
 @app.put("/api/episodes/{episode_id}/models")
@@ -864,9 +998,17 @@ def save_episode_models(episode_id: str, request: ModelMapRequest) -> dict[str, 
         reasoning = selection.reasoning_effort
         if efforts and reasoning is not None and reasoning not in efforts:
             raise HTTPException(status_code=422, detail=f"Unsupported reasoning effort for {provider_id}: {reasoning}")
+        voice_id = selection.voice_id
+        if voice_id and task["capability"] != "audio":
+            raise HTTPException(status_code=422, detail=f"Task {task_id} does not accept a voice")
+        if provider_id == "gemini" and voice_id:
+            known_voice_ids = {voice.voice_id for voice in list_tts_voices("gemini")}
+            if voice_id not in known_voice_ids:
+                raise HTTPException(status_code=422, detail=f"Unknown Gemini TTS voice: {voice_id}")
         overrides[task_id] = {
             "provider": provider_id, "model": model,
             **({"reasoning_effort": reasoning or efforts[0]} if efforts else {}),
+            **({"voice_id": voice_id} if voice_id else {}),
         }
     candidate = default_config()
     global_path = store.root / ".svf-orchestrator.json"
