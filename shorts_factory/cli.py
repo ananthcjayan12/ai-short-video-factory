@@ -40,7 +40,7 @@ def talking_head_policy(
 @app.command("init")
 def init_episode(
     episode_id: str, title: str = typer.Option(...), pain: str = typer.Option(...),
-    industry: str = typer.Option("Small Business"), role: str = typer.Option("Owner / GC"),
+    industry: str = typer.Option("Small Business"), role: str = typer.Option("Owner"),
     root: str = typer.Option("projects"), overwrite: bool = False,
 ):
     s = store(root)
