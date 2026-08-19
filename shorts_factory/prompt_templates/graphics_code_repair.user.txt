@@ -1,0 +1,10 @@
+Validated layout:
+{layout_json}
+
+Measured defects:
+{issues_json}
+
+Current source:
+{source_json}
+
+Return the complete corrected source for `{scene_id}`.

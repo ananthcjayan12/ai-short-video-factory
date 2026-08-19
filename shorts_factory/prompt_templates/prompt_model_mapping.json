@@ -63,6 +63,33 @@
       "default_model": "gpt-5.6-sol",
       "external_confirmation": false,
       "max_tokens": 24000
+    },
+    "graphics_layout": {
+      "capability": "structured",
+      "system_file": "graphics_layout.system.txt",
+      "user_file": "graphics_layout.user.txt",
+      "default_provider": "codex",
+      "default_model": "gpt-5.6-sol",
+      "external_confirmation": false,
+      "max_tokens": 16000
+    },
+    "graphics_coder": {
+      "capability": "structured",
+      "system_file": "graphics_coder.system.txt",
+      "user_file": "graphics_coder.user.txt",
+      "default_provider": "codex",
+      "default_model": "gpt-5.6-sol",
+      "external_confirmation": false,
+      "max_tokens": 32000
+    },
+    "graphics_code_repair": {
+      "capability": "structured",
+      "system_file": "graphics_code_repair.system.txt",
+      "user_file": "graphics_code_repair.user.txt",
+      "default_provider": "codex",
+      "default_model": "gpt-5.6-sol",
+      "external_confirmation": false,
+      "max_tokens": 32000
     }
   }
 }

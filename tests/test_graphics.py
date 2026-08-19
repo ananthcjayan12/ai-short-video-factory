@@ -12,6 +12,7 @@ from shorts_factory.models import (
 from shorts_factory import pipeline
 from shorts_factory.pipeline import (
     _align_graphics_actions_to_words,
+    _custom_graphics_scene_worker_count,
     _default_graphics_plan,
     _validate_graphics_storytelling_quality,
     generate_graphics_plan,
@@ -34,8 +35,11 @@ def test_graphics_stage_creates_contracts_scene_previews_and_master(tmp_path: Pa
         stage="director", prompt="", output_model=DirectorPlan, request_dir=project / "_requests",
     )
     write_json(project / "03_director/director_plan.approved.json", director)
+    write_json(store.root / ".svf-orchestrator.json", {
+        "tasks": {"graphics_builder": {"provider": "mock", "model": "deterministic"}},
+    })
 
-    plan = generate_graphics_plan(store, "graphics-01", agent_kind="mock")
+    plan = generate_graphics_plan(store, "graphics-01")
     composition = build(project, preview=True, width=1080, height=1920)
 
     expected = {scene.scene_id for scene in director.scenes if scene.renderer in {"hyperframes", "static"}}
@@ -124,7 +128,7 @@ def test_graphics_quality_reports_global_and_scene_defects_together(tmp_path: Pa
     assert f"Graphics scene {first.scene_id} under-fills the portrait stage" in message
 
 
-def test_graphics_quality_uses_second_bounded_repair_for_a_remaining_defect(tmp_path: Path, monkeypatch):
+def test_real_graphics_generation_uses_custom_html_engine(tmp_path: Path, monkeypatch):
     store = ProjectStore(tmp_path / "projects")
     store.create(EpisodeBrief(
         episode_id="quality-repairs", title="Invoice flow",
@@ -139,44 +143,34 @@ def test_graphics_quality_uses_second_bounded_repair_for_a_remaining_defect(tmp_
     write_json(project / "03_director/director_plan.approved.json", director)
     graphics_scenes = [scene for scene in director.scenes if scene.renderer in {"hyperframes", "static"}]
     good = _default_graphics_plan("quality-repairs", director, graphics_scenes)
-    first, second, *remaining = good.scenes
-    compressed_objects = [
-        item.model_copy(update={
-            "frame": item.frame.model_copy(update={"y": 10 + index * 4, "height": 10}),
-        })
-        for index, item in enumerate(first.objects)
-    ]
-    underfilled_scene = first.model_copy(update={"objects": compressed_objects})
-    initial = good.model_copy(update={
-        "scenes": [
-            underfilled_scene,
-            second.model_copy(update={"scene_shell": first.scene_shell}),
-            *remaining,
-        ],
-    })
-    first_repair = good.model_copy(update={"scenes": [underfilled_scene, second, *remaining]})
-    responses = [initial, first_repair, good]
-    stages: list[str] = []
-    prompts: list[str] = []
+    calls: list[dict] = []
 
-    class SequenceAgent:
-        def run(self, *, stage, prompt, **_kwargs):
-            stages.append(stage)
-            prompts.append(prompt)
-            return responses.pop(0)
+    def custom_engine(*args, **kwargs):
+        calls.append({"args": args, "kwargs": kwargs})
+        return good
 
-    monkeypatch.setattr(pipeline, "_structured_agent", lambda *_args, **_kwargs: SequenceAgent())
-    monkeypatch.setattr(pipeline, "_validate_graphics_visuals", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(pipeline, "_generate_custom_graphics_plan", custom_engine)
 
     repaired = generate_graphics_plan(store, "quality-repairs")
 
     assert repaired == good
-    assert stages == [
-        "graphics_builder", "graphics_builder_quality_repair", "graphics_builder_quality_repair_2",
-    ]
-    assert "Adjacent graphics scenes repeat" in prompts[1]
-    assert "under-fills the portrait stage" in prompts[1]
-    assert "under-fills the portrait stage" in prompts[2]
+    assert len(calls) == 1
+    assert calls[0]["kwargs"]["brief"].episode_id == "quality-repairs"
+    assert calls[0]["kwargs"]["graphics_scenes"]
+
+
+def test_custom_graphics_scene_runners_are_bounded_and_configurable(monkeypatch):
+    assert _custom_graphics_scene_worker_count(1) == 1
+    assert _custom_graphics_scene_worker_count(12) == 3
+
+    monkeypatch.setenv("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "2")
+    assert _custom_graphics_scene_worker_count(12) == 2
+
+    monkeypatch.setenv("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "99")
+    assert _custom_graphics_scene_worker_count(12) == 4
+
+    monkeypatch.setenv("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "not-a-number")
+    assert _custom_graphics_scene_worker_count(12) == 3
 
 
 def test_graphics_actions_snap_to_the_selected_word_occurrence_and_next_frame():

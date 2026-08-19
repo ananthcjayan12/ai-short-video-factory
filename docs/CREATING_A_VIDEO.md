@@ -312,18 +312,23 @@ After screen recordings are attached, click **Generate graphics** or run:
 svf generate-graphics pain-102
 ```
 
-The graphics model outputs a validated data contract rather than HTML or edit code. Its editorial grammar uses semantic object types, free-form portrait frames, causal connections, spatial reveals, maps, evidence collage, kinetic type, object transformation, and continuity instead of reducing each scene to a generic card grid. Important actions quote an exact narration anchor and are snapped back to the master word timeline before rendering. Factory Desk then deterministically compiles:
+The custom graphics engine uses two bounded stages. First, a creative-director model outputs a validated portrait layout contract with concrete visual forms, free-form regions, opening/payoff states, and exact narration anchors. Second, a coding model translates only that approved scene layout into isolated HTML, scoped CSS, inline SVG, and deterministic JavaScript. Independent Director graphics beats use three bounded provider runners by default, preserving their timeline order and continuity context; set `SVF_CUSTOM_GRAPHICS_CONCURRENCY=1` through `4` to override it. The coding stage cannot access the network, global page state, timers, storage, external assets, or another scene. Important actions quote an exact narration anchor and are snapped back to the master word timeline before source compilation. Factory Desk retains:
 
 ```text
 08_graphics/graphics_plan.json
+08_graphics/custom_graphics.json
 08_graphics/graphics_manifest.json
 08_graphics/scenes/<scene-id>.html
+08_graphics/scene_sources/<scene-id>/layout.json
+08_graphics/scene_sources/<scene-id>/scene.html
+08_graphics/scene_sources/<scene-id>/scene.css
+08_graphics/scene_sources/<scene-id>/scene.js
 08_graphics/master.html
 ```
 
 This follows the stock-Reel evidence workflow: each graphics scene declares one evolving visual world, opening and payoff states, an optional camera move, free-form object frames, narration-timed actions, a continuity object, and two or three stable review checkpoints. Every non-hold action is verified against an exact consecutive Whisper phrase and starts on the first output frame at or after that word. Scene boundaries are stored as contiguous integer frame windows so fractional-time rounding cannot accumulate. New episodes use 60 fps by default; 24, 30, and 60 fps remain valid per-episode formats.
 
-A hard storytelling gate rejects repeated shells, dashboard/card layouts, static reveal-only scenes, missing final-third payoffs, long unchanged sections, ungrounded narration anchors, and permanently overlapping visual states. After compilation, browser QA seeks every review checkpoint and action window to verify safe-stage containment, resolved object overlap, and observable motion before the timeline preview is accepted. One bounded AI re-plan is allowed. If the selected AI provider's usage limit is exhausted, the job stops before compiling any new graphics or preview and tells the operator to change the provider/model or replenish quota. Deterministic output runs only when the operator explicitly selects mock/offline generation. Open the graphics master to inspect only the designed scenes. The renderer applies the current project's visual theme; reference themes and assets are not copied.
+A hard layout gate rejects dashboard/card layouts, static reveal-only scenes, missing final-third payoffs, ungrounded narration anchors, future-element leaks, and under-filled portrait compositions before code is accepted. Source validation rejects unscoped CSS, shell overrides, external URLs/assets, unsafe HTML/SVG, global DOM access, network/storage/timer APIs, randomness, event listeners, and dynamic code. After compilation, browser QA seeks every review checkpoint and action window to verify safe-stage containment, clipping, overlap, runtime safety, and observable motion before the timeline preview is accepted. Measured failures repair only the affected scene and preserve accepted neighboring source. If the selected AI provider's usage limit is exhausted, the job stops before accepting a new package. Deterministic output runs when the operator explicitly selects mock/offline generation. Open the graphics master to inspect only the designed scenes. The operator-selected Editorial or Whiteboard theme applies to the whole graphics package; the Director never alternates it.
 
 ## 10. QA, preview, and final render
 

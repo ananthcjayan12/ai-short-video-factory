@@ -180,3 +180,47 @@ def graphics_builder_prompt(
         screen_scenes_json=json.dumps(screen_scenes, indent=2),
     )
     return f"{bundle.system}\n\n# GRAPHICS INPUT\n{bundle.user}"
+
+
+def custom_graphics_layout_prompt(
+    brief: EpisodeBrief,
+    narration: Narration,
+    scene: dict,
+    words: WordTimestampBundle | None,
+    continuity: dict,
+) -> str:
+    timing = _screen_scene_timing([scene], words)
+    bundle = build_prompt(
+        "graphics_layout",
+        graphics_theme=brief.graphics_theme,
+        brief_json=json.dumps(brief.model_dump(mode="json"), indent=2),
+        narration_json=json.dumps(narration.model_dump(mode="json"), indent=2),
+        scene_json=json.dumps(scene, indent=2),
+        scene_timing_json=json.dumps(timing[0] if timing else {}, indent=2),
+        continuity_json=json.dumps(continuity, indent=2),
+    )
+    return f"{bundle.system}\n\n# SCENE INPUT\n{bundle.user}"
+
+
+def custom_graphics_coder_prompt(layout: object, *, graphics_theme: str) -> str:
+    scene_id = getattr(layout, "scene_id")
+    layout_json = layout.model_dump_json(indent=2)
+    bundle = build_prompt(
+        "graphics_coder",
+        graphics_theme=graphics_theme,
+        scene_id=scene_id,
+        layout_json=layout_json,
+    )
+    return f"{bundle.system}\n\n# CODE INPUT\n{bundle.user}"
+
+
+def custom_graphics_code_repair_prompt(layout: object, source: object, issues: list[str]) -> str:
+    scene_id = getattr(layout, "scene_id")
+    bundle = build_prompt(
+        "graphics_code_repair",
+        scene_id=scene_id,
+        layout_json=layout.model_dump_json(indent=2),
+        source_json=source.model_dump_json(indent=2),
+        issues_json=json.dumps(issues, indent=2),
+    )
+    return f"{bundle.system}\n\n# REPAIR INPUT\n{bundle.user}"

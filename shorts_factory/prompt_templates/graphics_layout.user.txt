@@ -1,0 +1,16 @@
+Episode brief:
+{brief_json}
+
+Approved narration:
+{narration_json}
+
+Approved Director scene:
+{scene_json}
+
+Exact words overlapping this scene, with scene-local timestamps:
+{scene_timing_json}
+
+Adjacent graphics continuity context:
+{continuity_json}
+
+Create the CustomGraphicsLayoutPlan for only this scene.

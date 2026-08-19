@@ -286,6 +286,10 @@ def write_graphics_package(
     project_dir: Path, plan: GraphicsPlan, *, width: int, height: int, fps: int = 60,
 ) -> Path:
     root = project_dir / "08_graphics"
+    # A deterministic/offline regeneration supersedes any previously accepted
+    # custom package. Leaving the custom index behind would make composition
+    # prefer stale generated source over this newly written legacy plan.
+    (root / "custom_graphics.json").unlink(missing_ok=True)
     scene_root = root / "scenes"
     scene_root.mkdir(parents=True, exist_ok=True)
     write_json(root / "graphics_plan.json", plan)

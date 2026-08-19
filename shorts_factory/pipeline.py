@@ -12,10 +12,19 @@ import subprocess
 import sys
 import time
 import wave
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
-from typing import Any
+from threading import Lock
+from typing import Any, Callable
+
+from pydantic import BaseModel
 
 from .agents import CommandAgent, ManualAgent, MockAgent, ProviderAgent, StructuredAgent
+from .custom_graphics import (
+    CustomGraphicsLayoutPlan, CustomGraphicsPackage, CustomGraphicsSceneBundle,
+    CustomGraphicsSource, CustomGraphicsSourceError, custom_package_summary,
+    validate_custom_graphics_source, write_custom_graphics_package,
+)
 from .demo import bootstrap_pain001
 from .director import (
     normalize, production_budgets, snap_to_word_boundaries, validate_budgets,
@@ -33,7 +42,8 @@ from .orchestrator import PROVIDERS, default_config, resolve_task
 from .project import ProjectStore
 from .progress import emit
 from .prompts import (
-    claim_handles, director_prompt, graphics_builder_prompt, narration_prompt, narration_rewrite_prompt,
+    claim_handles, custom_graphics_code_repair_prompt, custom_graphics_coder_prompt,
+    custom_graphics_layout_prompt, director_prompt, graphics_builder_prompt, narration_prompt, narration_rewrite_prompt,
     prototype_builder_prompt, prototype_repair_prompt, story_structure_prompt,
 )
 from .rendering.graphics import write_graphics_package
@@ -289,7 +299,10 @@ def generate_director_plan(store: ProjectStore, episode_id: str, *, agent_kind: 
     words_path = project / "02_voice/audio_word_timestamps.json"
     timing = load_model(timing_path, AudioTiming) if timing_path.exists() else None
     words = load_model(words_path, WordTimestampBundle) if words_path.exists() else None
-    if agent_kind != "mock":
+    configured_mock = False
+    if agent_kind is None:
+        configured_mock = resolve_task(load_config(store, episode_id), "graphics_builder")["provider_mode"] == "mock"
+    if agent_kind != "mock" and not configured_mock:
         if not voice:
             raise RuntimeError("Master voice is missing. Generate or import voice before directing.")
         if not timing or not words:
@@ -1069,6 +1082,366 @@ def _validate_graphics_visuals(
     return report
 
 
+class CustomGraphicsVisualValidationError(RuntimeError):
+    def __init__(self, report: GraphicsVisualReport):
+        self.report = report
+        failures = [finding for finding in report.findings if finding.issues]
+        summary = "; ".join(
+            f"{finding.scene_id} {finding.moment}: {', '.join(finding.issues)}"
+            for finding in failures[:8]
+        )
+        super().__init__(f"Custom graphics frame QA failed: {summary}")
+
+
+def _validate_custom_graphics_visuals(
+    project: Path,
+    *,
+    fps: int,
+    width: int,
+    height: int,
+) -> GraphicsVisualReport:
+    """Inspect generated custom HTML/CSS/JS scenes without rendering an MP4."""
+    repo_root = Path(__file__).resolve().parents[1]
+    graphics_root = project / "08_graphics"
+    with socket.socket() as reservation:
+        reservation.bind(("127.0.0.1", 0))
+        port = int(reservation.getsockname()[1])
+    server = subprocess.Popen(
+        [sys.executable, str(repo_root / "scripts/serve_demo.py"), str(graphics_root), str(port)],
+        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+    )
+    result: subprocess.CompletedProcess[str] | None = None
+    try:
+        time.sleep(0.6)
+        result = subprocess.run(
+            [
+                str(node_binary()), str(repo_root / "scripts/validate_custom_graphics.mjs"),
+                f"http://127.0.0.1:{port}/master.html",
+                str(graphics_root / "custom_graphics.json"), str(fps), str(width), str(height),
+            ],
+            cwd=repo_root, capture_output=True, text=True, timeout=300,
+        )
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=3)
+        except subprocess.TimeoutExpired:
+            server.kill()
+    log = ((result.stdout or "") + "\n" + (result.stderr or "")) if result else "Custom graphics visual QA did not start"
+    atomic_write_text(project / "_requests/custom_graphics_visual_qa.log", log)
+    if not result:
+        raise RuntimeError("Custom graphics visual QA did not start")
+    try:
+        report = GraphicsVisualReport.model_validate(json.loads(result.stdout))
+    except Exception as exc:
+        raise RuntimeError(f"Custom graphics visual QA returned an invalid report: {log[-3000:]}") from exc
+    write_json(project / "_requests/custom_graphics_visual_qa.json", report)
+    # Preserve the canonical filename consumed by existing UI/tests.
+    write_json(project / "_requests/graphics_visual_qa.json", report)
+    if result.returncode != 0 or not report.ok:
+        raise CustomGraphicsVisualValidationError(report)
+    return report
+
+
+def _align_custom_layout_to_words(
+    layout: CustomGraphicsLayoutPlan,
+    source_scene: Any,
+    words: WordTimestampBundle | None,
+    *,
+    fps: int,
+) -> CustomGraphicsLayoutPlan:
+    if layout.scene_id != source_scene.scene_id:
+        raise RuntimeError(
+            f"Custom graphics layout returned scene {layout.scene_id!r}; expected {source_scene.scene_id!r}"
+        )
+    if abs(layout.start - source_scene.start) > 0.02 or abs(layout.end - source_scene.end) > 0.02:
+        raise RuntimeError(f"Custom graphics layout changed the approved timing for {source_scene.scene_id}")
+    if words is None:
+        raise RuntimeError("Custom HTML graphics require validated scene-local Whisper word timestamps")
+    duration = source_scene.end - source_scene.start
+    actions = []
+    for action in layout.actions:
+        if action.action == "hold":
+            actions.append(action)
+            continue
+        aligned = _cue_anchor_start(
+            action.anchor_text or "", source_scene, words, occurrence=action.anchor_occurrence,
+        )
+        if aligned is None:
+            raise RuntimeError(
+                f"Custom graphics action {source_scene.scene_id}/{action.cue_id} uses missing narration "
+                f"anchor {action.anchor_text!r} occurrence {action.anchor_occurrence}"
+            )
+        frame = math.ceil(max(0.0, aligned) * fps - 1e-9)
+        actions.append(action.model_copy(update={"at_seconds": round(min(duration, frame / fps), 6)}))
+    candidate = layout.model_copy(update={"actions": sorted(actions, key=lambda item: item.at_seconds)})
+    latest_semantic = max(action.at_seconds for action in candidate.actions if action.action != "hold")
+    if latest_semantic < duration * 0.62:
+        raise RuntimeError(
+            f"Custom graphics scene {layout.scene_id} has no narration-anchored final-third payoff"
+        )
+    if latest_semantic > duration - 0.7 + 1e-6:
+        raise RuntimeError(
+            f"Custom graphics scene {layout.scene_id} leaves less than 0.7 seconds to read the payoff"
+        )
+    return candidate
+
+
+def _validated_custom_source(
+    agent: StructuredAgent,
+    layout: CustomGraphicsLayoutPlan,
+    *,
+    graphics_theme: GraphicsTheme,
+    request_dir: Path,
+    initial_source: CustomGraphicsSource | None = None,
+    initial_issues: list[str] | None = None,
+    stage_prefix: str = "graphics_coder",
+) -> tuple[CustomGraphicsSource, list[str]]:
+    repairs: list[str] = []
+    source = initial_source
+    issues = list(initial_issues or [])
+    maximum_attempts = 2
+    for attempt in range(maximum_attempts + 1):
+        if source is None:
+            prompt = custom_graphics_coder_prompt(layout, graphics_theme=graphics_theme)
+            stage = f"{stage_prefix}_{layout.scene_id.lower()}"
+        else:
+            prompt = custom_graphics_code_repair_prompt(layout, source, issues)
+            stage = f"{stage_prefix}_{layout.scene_id.lower()}_repair_{attempt}"
+        candidate = _run_graphics_agent(
+            agent, stage=stage, prompt=prompt, output_model=CustomGraphicsSource,
+            request_dir=request_dir,
+        )
+        try:
+            validate_custom_graphics_source(layout, candidate)
+            return candidate, repairs
+        except CustomGraphicsSourceError as exc:
+            source = candidate
+            issues = exc.issues
+            repairs.append(f"attempt {attempt + 1}: " + "; ".join(exc.issues))
+    raise CustomGraphicsSourceError(issues)
+
+
+def _custom_graphics_scene_worker_count(scene_count: int) -> int:
+    """Return the bounded number of independent custom-scene runners.
+
+    Each generated scene is an isolated graphics beat: it receives only the
+    approved scene contract and its immediate visual neighbours. That makes
+    scene generation safe to parallelize while preserving the Director's
+    timeline and the final package-level QA pass.
+    """
+    if scene_count <= 1:
+        return 1
+    try:
+        requested = int(os.environ.get("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "3"))
+    except ValueError:
+        requested = 3
+    return max(1, min(scene_count, requested, 4))
+
+
+def _generate_custom_graphics_scene(
+    store: ProjectStore,
+    episode_id: str,
+    *,
+    brief: EpisodeBrief,
+    narration: Narration,
+    graphics_scenes: list[Any],
+    scene_index: int,
+    words: WordTimestampBundle | None,
+    agent_kind: str | None,
+    consume_response: bool,
+    request_dir: Path,
+    on_layout_validated: Callable[[str], None] | None = None,
+) -> CustomGraphicsSceneBundle:
+    """Generate one isolated Director graphics beat on its own provider runner."""
+    scene = graphics_scenes[scene_index]
+    agent = _structured_agent(
+        store, "graphics_builder", {"episode_id": episode_id},
+        agent_kind=agent_kind, consume_response=consume_response,
+    )
+    continuity = {
+        "previous": graphics_scenes[scene_index - 1].visual_brief if scene_index else None,
+        "next": graphics_scenes[scene_index + 1].visual_brief if scene_index + 1 < len(graphics_scenes) else None,
+    }
+    base_prompt = custom_graphics_layout_prompt(
+        brief, narration, scene.model_dump(mode="json"), words, continuity,
+    )
+    layout: CustomGraphicsLayoutPlan | None = None
+    last_error: Exception | None = None
+    for attempt in range(3):
+        prompt = base_prompt
+        if last_error is not None:
+            prompt += (
+                f"\n\n# BOUNDED LAYOUT REPAIR {attempt}/2\n"
+                "Return the complete corrected layout for this scene only. Preserve scene identity, timing, "
+                "theme, facts, and valid narration anchors.\n"
+                f"Measured defects:\n{last_error}"
+            )
+            if layout is not None:
+                prompt += f"\n\nPrevious layout:\n{layout.model_dump_json(indent=2)}"
+        try:
+            candidate = _run_graphics_agent(
+                agent,
+                stage=(
+                    f"graphics_layout_{scene.scene_id.lower()}"
+                    if attempt == 0 else f"graphics_layout_{scene.scene_id.lower()}_repair_{attempt}"
+                ),
+                prompt=prompt,
+                output_model=CustomGraphicsLayoutPlan,
+                request_dir=request_dir,
+            )
+            layout = candidate
+            if candidate.theme != brief.graphics_theme:
+                raise RuntimeError(
+                    f"Custom graphics layout theme {candidate.theme!r} does not match {brief.graphics_theme!r}"
+                )
+            layout = _align_custom_layout_to_words(candidate, scene, words, fps=brief.fps)
+            break
+        except (RuntimeError, ValueError) as exc:
+            if "usage limit is exhausted" in str(exc).casefold():
+                raise
+            last_error = exc
+    else:
+        raise RuntimeError(
+            f"Custom graphics layout repair failed for {scene.scene_id}: {last_error}"
+        )
+    if on_layout_validated is not None:
+        on_layout_validated(scene.scene_id)
+    source, repairs = _validated_custom_source(
+        agent, layout, graphics_theme=brief.graphics_theme, request_dir=request_dir,
+    )
+    return CustomGraphicsSceneBundle(layout=layout, source=source, repairs=repairs)
+
+
+def _generate_custom_graphics_plan(
+    store: ProjectStore,
+    episode_id: str,
+    *,
+    brief: EpisodeBrief,
+    narration: Narration,
+    director: DirectorPlan,
+    graphics_scenes: list[Any],
+    words: WordTimestampBundle | None,
+    agent_kind: str | None,
+    consume_response: bool,
+) -> GraphicsPlan:
+    project = store.project_dir(episode_id)
+    request_dir = project / "_requests"
+    worker_count = _custom_graphics_scene_worker_count(len(graphics_scenes))
+    emit(
+        12,
+        f"Launching {worker_count} isolated graphics scene runner(s) for {len(graphics_scenes)} visual beats",
+        task="graphics_builder",
+    )
+    completed = 0
+    progress_lock = Lock()
+
+    def report_layout_validated(scene_id: str) -> None:
+        # Layouts finish in a different order when multiple runners are active.
+        # Read the shared completion count under one lock so a late layout event
+        # can never move Factory Desk progress backwards.
+        with progress_lock:
+            percent = 14 + round(completed / len(graphics_scenes) * 46)
+            emit(percent, f"{scene_id}: layout validated; generating isolated HTML/CSS/JavaScript", task="graphics_builder")
+
+    def report_scene_complete(scene_id: str) -> None:
+        nonlocal completed
+        with progress_lock:
+            completed += 1
+            emit(14 + round(completed / len(graphics_scenes) * 46), f"{scene_id}: custom scene source validated ({completed}/{len(graphics_scenes)})", task="graphics_builder")
+
+    indexed_bundles: dict[int, CustomGraphicsSceneBundle] = {}
+    job_args = dict(
+        store=store, episode_id=episode_id, brief=brief, narration=narration,
+        graphics_scenes=graphics_scenes, words=words, agent_kind=agent_kind,
+        consume_response=consume_response, request_dir=request_dir,
+        on_layout_validated=report_layout_validated,
+    )
+    if worker_count == 1:
+        for index, scene in enumerate(graphics_scenes):
+            indexed_bundles[index] = _generate_custom_graphics_scene(
+                scene_index=index, **job_args,
+            )
+            report_scene_complete(scene.scene_id)
+    else:
+        with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="graphics-scene") as executor:
+            futures = {
+                executor.submit(_generate_custom_graphics_scene, scene_index=index, **job_args): (index, scene)
+                for index, scene in enumerate(graphics_scenes)
+            }
+            try:
+                for future in as_completed(futures):
+                    index, scene = futures[future]
+                    indexed_bundles[index] = future.result()
+                    report_scene_complete(scene.scene_id)
+            except Exception:
+                for future in futures:
+                    future.cancel()
+                raise
+    bundles = [indexed_bundles[index] for index in range(len(graphics_scenes))]
+    package = CustomGraphicsPackage(
+        episode_id=episode_id,
+        duration_seconds=director.duration_seconds,
+        theme=brief.graphics_theme,
+        scenes=bundles,
+    )
+    summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
+    _validate_graphics_against_director(summary, director)
+    emit(60, "Compiling isolated custom graphics previews", task="graphics_builder")
+    write_custom_graphics_package(
+        project, package, summary, width=brief.width, height=brief.height, fps=brief.fps,
+    )
+    emit(72, "Checking custom cue frames, clipping, overlap, and action liveness", task="graphics_builder")
+    try:
+        _validate_custom_graphics_visuals(
+            project, fps=brief.fps, width=brief.width, height=brief.height,
+        )
+    except CustomGraphicsVisualValidationError as exc:
+        by_scene: dict[str, list[str]] = {}
+        for finding in exc.report.findings:
+            if not finding.issues:
+                continue
+            targets = (
+                [bundle.layout.scene_id for bundle in package.scenes]
+                if finding.scene_id == "package" else [finding.scene_id]
+            )
+            for scene_id in targets:
+                by_scene.setdefault(scene_id, []).extend(
+                    f"{finding.moment}: {issue}" for issue in finding.issues
+                )
+        repaired_bundles: list[CustomGraphicsSceneBundle] = []
+        for bundle in package.scenes:
+            issues = list(dict.fromkeys(by_scene.get(bundle.layout.scene_id, [])))
+            if not issues:
+                repaired_bundles.append(bundle)
+                continue
+            emit(
+                78, f"{bundle.layout.scene_id}: repairing measured custom-scene defects",
+                task="graphics_builder",
+            )
+            source, repairs = _validated_custom_source(
+                agent, bundle.layout, graphics_theme=brief.graphics_theme, request_dir=request_dir,
+                initial_source=bundle.source, initial_issues=issues, stage_prefix="graphics_visual",
+            )
+            repaired_bundles.append(bundle.model_copy(update={
+                "source": source,
+                "repairs": [*bundle.repairs, *issues, *repairs],
+            }))
+        package = package.model_copy(update={"scenes": repaired_bundles})
+        summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
+        write_custom_graphics_package(
+            project, package, summary, width=brief.width, height=brief.height, fps=brief.fps,
+        )
+        _validate_custom_graphics_visuals(
+            project, fps=brief.fps, width=brief.width, height=brief.height,
+        )
+    emit(86, "Building the interactive voice-timed timeline preview", task="graphics_builder")
+    build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
+    store.transition(episode_id, EpisodeStage.COMPOSITION_READY)
+    emit(100, f"Generated {len(summary.scenes)} custom graphics scenes", task="graphics_builder")
+    return summary
+
+
 def generate_graphics_plan(
     store: ProjectStore,
     episode_id: str,
@@ -1092,111 +1465,34 @@ def generate_graphics_plan(
         f"Planning {len(graphics_scenes)} {brief.graphics_theme} graphics scenes",
         task="graphics_builder",
     )
-    deterministic_plan_requested = agent_kind == "mock"
-    if agent_kind == "mock":
-        plan = _default_graphics_plan(
-            episode_id, director, graphics_scenes, graphics_theme=brief.graphics_theme,
+    configured_mock = False
+    if agent_kind is None:
+        configured_mock = (
+            resolve_task(load_config(store, episode_id), "graphics_builder")["provider_mode"] == "mock"
         )
-    else:
-        agent = _structured_agent(
-            store, "graphics_builder", {"episode_id": episode_id},
-            agent_kind=agent_kind, consume_response=consume_response,
+    if agent_kind != "mock" and not configured_mock:
+        return _generate_custom_graphics_plan(
+            store, episode_id, brief=brief, narration=narration, director=director,
+            graphics_scenes=graphics_scenes, words=words, agent_kind=agent_kind,
+            consume_response=consume_response,
         )
-        base_prompt = graphics_builder_prompt(
-            brief, narration,
-            [scene.model_dump(mode="json") for scene in graphics_scenes],
-            [scene.model_dump(mode="json") for scene in screen_scenes],
-            words,
-        )
-        plan = _run_graphics_agent(
-            agent,
-            stage="graphics_builder",
-            prompt=base_prompt,
-            output_model=GraphicsPlan,
-            request_dir=project / "_requests",
-        )
-        quality_repair_attempt = 0
-        maximum_quality_repairs = 2
-        while True:
-            try:
-                plan = _prepare_graphics_candidate(
-                    plan, brief=brief, director=director, words=words,
-                )
-                break
-            except RuntimeError as exc:
-                if quality_repair_attempt >= maximum_quality_repairs:
-                    raise RuntimeError(
-                        f"Graphics quality repair failed after {maximum_quality_repairs} attempts. "
-                        f"Last measured defects: {exc}"
-                    ) from exc
-                quality_repair_attempt += 1
-                emit(
-                    34 + quality_repair_attempt * 8,
-                    f"Graphics contract failed quality checks; requesting bounded repair "
-                    f"{quality_repair_attempt}/{maximum_quality_repairs}",
-                    task="graphics_builder",
-                )
-                stage = (
-                    "graphics_builder_quality_repair"
-                    if quality_repair_attempt == 1
-                    else f"graphics_builder_quality_repair_{quality_repair_attempt}"
-                )
-                repair_prompt = (
-                    base_prompt.rstrip()
-                    + f"\n\n# BOUNDED QUALITY REPAIR {quality_repair_attempt}/{maximum_quality_repairs}\n"
-                    + "The previous contract passed its JSON schema but failed deterministic quality gates. "
-                    + "Every measured defect below must be fixed together. Return a complete corrected "
-                    + "GraphicsPlan and preserve episode and scene timings exactly. Do not change already-valid "
-                    + "facts, narration anchors, or the operator-selected theme.\n"
-                    + f"Measured defects:\n{exc}\n\nPrevious contract:\n"
-                    + plan.model_dump_json(indent=2)
-                )
-                plan = _run_graphics_agent(
-                    agent,
-                    stage=stage,
-                    prompt=repair_prompt,
-                    output_model=GraphicsPlan,
-                    request_dir=project / "_requests",
-                )
-    if deterministic_plan_requested:
-        plan = _prepare_graphics_candidate(
-            plan, brief=brief, director=director, words=words, require_anchors=False,
-        )
+
+    # Offline/mock mode remains deterministic and does not pretend to be the
+    # custom HTML/CSS/JavaScript engine.
+    plan = _default_graphics_plan(
+        episode_id, director, graphics_scenes, graphics_theme=brief.graphics_theme,
+    )
+    plan = _prepare_graphics_candidate(
+        plan, brief=brief, director=director, words=words, require_anchors=False,
+    )
     emit(55, "Graphics contracts validated; compiling scene previews", task="graphics_builder")
     write_graphics_package(project, plan, width=brief.width, height=brief.height, fps=brief.fps)
     emit(70, "Checking cue frames, safe bounds, motion, and object overlap", task="graphics_builder")
-    try:
-        _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
-    except RuntimeError as exc:
-        if deterministic_plan_requested:
-            raise
-        emit(76, "Measured graphics frames failed; requesting one visual repair", task="graphics_builder")
-        visual_repair_prompt = (
-            base_prompt.rstrip()
-            + "\n\n# BOUNDED VISUAL REPAIR\n"
-            + "The previous contract passed semantic validation but failed deterministic browser frame QA. "
-            + "Return a complete corrected GraphicsPlan. Preserve episode and scene timings exactly, "
-            + "fix only the measured visibility, sizing, bounds, or overlap defects, and keep every factual "
-            + "claim grounded in the approved inputs.\n"
-            + f"Measured issue: {exc}\n\nPrevious contract:\n"
-            + plan.model_dump_json(indent=2)
-        )
-        plan = _run_graphics_agent(
-            agent,
-            stage="graphics_builder_visual_repair",
-            prompt=visual_repair_prompt,
-            output_model=GraphicsPlan,
-            request_dir=project / "_requests",
-        )
-        plan = _prepare_graphics_candidate(
-            plan, brief=brief, director=director, words=words,
-        )
-        write_graphics_package(project, plan, width=brief.width, height=brief.height, fps=brief.fps)
-        _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
+    _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
     emit(82, "Building the interactive voice-timed timeline preview", task="graphics_builder")
     build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
     store.transition(episode_id, EpisodeStage.COMPOSITION_READY)
-    emit(100, f"Generated {len(plan.scenes)} graphics scenes and the timeline preview", task="graphics_builder")
+    emit(100, f"Generated {len(plan.scenes)} deterministic mock graphics scenes", task="graphics_builder")
     return plan
 
 
@@ -1205,9 +1501,9 @@ def _run_graphics_agent(
     *,
     stage: str,
     prompt: str,
-    output_model: type[GraphicsPlan],
+    output_model: type[BaseModel],
     request_dir: Path,
-) -> GraphicsPlan:
+) -> Any:
     """Run graphics AI without silently replacing a provider failure with mock output."""
     try:
         return agent.run(

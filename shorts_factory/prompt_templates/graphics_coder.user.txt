@@ -1,0 +1,4 @@
+Validated layout:
+{layout_json}
+
+Write the complete CustomGraphicsSource for scene `{scene_id}`.
