@@ -53,6 +53,63 @@ class EditorialSequenceLayoutDraft(BaseModel):
     graphics_layouts: list[CustomGraphicsLayoutDraft] = Field(default_factory=list, max_length=3)
 
 
+def _timings_look_absolute(values: list[float], *, start: float, end: float) -> bool:
+    """Return True only when a timing collection clearly uses master-clock seconds.
+
+    Layout start/end are absolute on the voice timeline, while actions and review
+    checkpoints are scene-local. Models occasionally mirror the absolute clock into
+    those local fields. We normalize only when there is strong evidence: every value
+    falls inside the scene's absolute interval and at least one exceeds the scene
+    duration. Ambiguous or genuinely invalid values are left untouched for strict
+    validation/repair.
+    """
+
+    if not values or start <= 0.05:
+        return False
+    duration = end - start
+    tolerance = 0.05
+    return (
+        all(start - tolerance <= value <= end + tolerance for value in values)
+        and any(value > duration + tolerance for value in values)
+    )
+
+
+def _normalize_scene_local_timing(draft: CustomGraphicsLayoutDraft) -> CustomGraphicsLayoutDraft:
+    """Normalize obvious absolute action/checkpoint timestamps to scene-local time."""
+
+    start = float(draft.start)
+    end = float(draft.end)
+    duration = end - start
+
+    checkpoint_values = [float(value) for value in draft.review_checkpoints]
+    checkpoints_are_absolute = _timings_look_absolute(
+        checkpoint_values, start=start, end=end,
+    )
+    normalized_checkpoints = (
+        [round(max(0.0, min(duration, value - start)), 6) for value in checkpoint_values]
+        if checkpoints_are_absolute else checkpoint_values
+    )
+
+    action_values = [float(action.at_seconds) for action in draft.actions]
+    actions_are_absolute = _timings_look_absolute(action_values, start=start, end=end)
+    normalized_actions = (
+        [
+            action.model_copy(update={
+                "at_seconds": round(max(0.0, min(duration, float(action.at_seconds) - start)), 6)
+            })
+            for action in draft.actions
+        ]
+        if actions_are_absolute else draft.actions
+    )
+
+    if not checkpoints_are_absolute and not actions_are_absolute:
+        return draft
+    return draft.model_copy(update={
+        "review_checkpoints": normalized_checkpoints,
+        "actions": normalized_actions,
+    })
+
+
 def _strict_sequence_layout(
     candidate: EditorialSequenceLayoutDraft,
     *,
@@ -100,8 +157,9 @@ def _strict_sequence_layout(
 
     aligned: list[CustomGraphicsLayoutPlan] = []
     for draft in candidate.graphics_layouts:
+        normalized = _normalize_scene_local_timing(draft)
         try:
-            strict = CustomGraphicsLayoutPlan.model_validate(draft.model_dump(mode="json"))
+            strict = CustomGraphicsLayoutPlan.model_validate(normalized.model_dump(mode="json"))
         except Exception as exc:
             raise RuntimeError(
                 f"Editorial sequence {record.sequence_id}/{draft.scene_id} failed the strict "
@@ -171,11 +229,14 @@ def _plan_sequence_layouts_repairable(
             previous_handoff=previous_handoff,
         )
         base_prompt += (
-            "\n\n# STRICT REVEAL INVARIANT\n"
+            "\n\n# STRICT GRAPHICS INVARIANTS\n"
             "Before returning JSON, audit every graphics_layout independently:\n"
             "- Each element with initially_visible=false MUST have exactly one action with action=\"reveal\" and target_id equal to that element_id.\n"
             "- Each element with initially_visible=true MUST have zero reveal actions.\n"
             "- Do not use transform, move, highlight, focus, connect, trace, or another action as a substitute for the required first reveal.\n"
+            "- scene start/end are ABSOLUTE master-timeline seconds.\n"
+            "- actions[].at_seconds and review_checkpoints[] are LOCAL seconds measured from scene start: first frame is 0.0 and final checkpoint must be <= (end-start).\n"
+            "- Never copy absolute master timestamps into actions[].at_seconds or review_checkpoints[].\n"
             "These are hard schema invariants, not style suggestions.\n"
         )
 
@@ -188,8 +249,9 @@ def _plan_sequence_layouts_repairable(
                 prompt += (
                     f"\n\n# BOUNDED SEQUENCE REPAIR {attempt}/2\n"
                     "Return the COMPLETE corrected EditorialSequenceLayout. Preserve approved scene IDs, "
-                    "order, renderers, timings, theme, facts, and exact narration anchors. Fix every "
-                    "measured contract defect below; do not merely explain it.\n"
+                    "order, renderers, scene start/end, theme, facts, and exact narration anchors. Fix every "
+                    "measured contract defect below; do not merely explain it. For graphics actions and review "
+                    "checkpoints use scene-local seconds, not master-timeline seconds.\n"
                     f"Measured defects:\n{last_error}"
                 )
                 if candidate is not None:
