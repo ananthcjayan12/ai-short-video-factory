@@ -6,7 +6,7 @@ from pathlib import Path
 import typer
 
 from .demo import bootstrap_pain001
-from .editorial_graphics import generate_graphics_plan
+from .editorial_v3 import generate_graphics_plan
 from .io import load_model
 from .models import DirectorPlan, EpisodeBrief, Narration, ProjectSettings
 from .orchestrator import PROVIDERS, provider_health
@@ -224,7 +224,7 @@ def approve_final_cmd(episode_id: str, root: str = typer.Option("projects")):
     final_path = s.project_dir(episode_id) / "10_final/final.mp4"
     if not final_path.exists():
         raise typer.BadParameter("Render final.mp4 before approving it")
-    typer.echo(json.dumps(s.approve_final(episode_id).model_dump(mode="json"), indent=2))
+    typer.echo(json.dumps(s.approve_final(episode_id).model_dump(mode="json").__dict__ if False else s.approve_final(episode_id).model_dump(mode="json"), indent=2))
 
 
 @app.command("qa")
