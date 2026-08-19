@@ -2,7 +2,10 @@ import pytest
 from pydantic import ValidationError
 
 from shorts_factory.custom_graphics import CustomGraphicsLayoutPlan
-from shorts_factory.editorial_layout_validation import CustomGraphicsLayoutDraft
+from shorts_factory.editorial_layout_validation import (
+    CustomGraphicsLayoutDraft,
+    _normalize_scene_local_timing,
+)
 
 
 def _layout_payload():
@@ -82,3 +85,41 @@ def test_repaired_draft_converts_to_strict_layout():
     strict = CustomGraphicsLayoutPlan.model_validate(draft.model_dump(mode="json"))
     assert strict.scene_id == "S01"
     assert [action.action for action in strict.actions].count("reveal") == 1
+
+
+def test_absolute_scene_clock_is_normalized_to_local_seconds_before_strict_validation():
+    payload = _layout_payload()
+    payload.update({"scene_id": "S02", "start": 6.1, "end": 14.64})
+    payload["actions"] = [
+        {
+            "cue_id": "cue_inbox_transform",
+            "action": "transform",
+            "target_id": "inbox",
+            "anchor_text": "Each email",
+            "anchor_occurrence": 0,
+            "at_seconds": 6.3,
+            "duration_seconds": 0.6,
+            "direction": "in",
+            "value": "starts the workflow",
+        },
+        {
+            "cue_id": "cue_volume_reveal",
+            "action": "reveal",
+            "target_id": "volume_counter",
+            "anchor_text": "choose the right Outlook template",
+            "anchor_occurrence": 0,
+            "at_seconds": 12.6,
+            "duration_seconds": 0.6,
+            "direction": "in",
+            "value": None,
+        },
+    ]
+    payload["review_checkpoints"] = [6.1, 12.6, 14.64]
+
+    draft = CustomGraphicsLayoutDraft.model_validate(payload)
+    normalized = _normalize_scene_local_timing(draft)
+
+    assert normalized.review_checkpoints == pytest.approx([0.0, 6.5, 8.54])
+    assert [action.at_seconds for action in normalized.actions] == pytest.approx([0.2, 6.5])
+    strict = CustomGraphicsLayoutPlan.model_validate(normalized.model_dump(mode="json"))
+    assert strict.scene_id == "S02"
