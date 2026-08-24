@@ -680,6 +680,36 @@ def _compile_graphics_layouts(
     return result
 
 
+def _load_sequence_plan_checkpoint(
+    path: Path,
+    expected: V3EditorialSequencePlan,
+) -> V3EditorialSequencePlan | None:
+    """Load creative direction only when it still describes the approved timeline."""
+    if not path.is_file():
+        return None
+    try:
+        candidate = load_model(path, V3EditorialSequencePlan)
+    except (OSError, ValueError):
+        return None
+    if (
+        candidate.version != expected.version
+        or candidate.episode_id != expected.episode_id
+        or candidate.theme != expected.theme
+        or len(candidate.sequences) != len(expected.sequences)
+    ):
+        return None
+    for saved, current in zip(candidate.sequences, expected.sequences):
+        if (
+            saved.sequence_id != current.sequence_id
+            or saved.scene_ids != current.scene_ids
+            or abs(saved.start - current.start) > 0.02
+            or abs(saved.end - current.end) > 0.02
+            or saved.layout is None
+        ):
+            return None
+    return candidate
+
+
 def generate_graphics_plan(
     store: ProjectStore,
     episode_id: str,
@@ -713,26 +743,36 @@ def generate_graphics_plan(
     words = load_model(words_path, WordTimestampBundle) if words_path.is_file() else None
     request_dir = project / "_requests"
 
-    plan = build_v3_editorial_sequence_plan(director, theme=brief.graphics_theme)
-    write_json(project / "03_director/editorial_sequence_plan.json", plan)
-    emit(
-        8,
-        f"Grouped {len(director.scenes)} Director beats into {len(plan.sequences)} V3 editorial sequence call(s)",
-        task="graphics_layout",
-    )
-    plan = _plan_sequences(
-        store,
-        episode_id,
-        brief=brief,
-        narration=narration,
-        director=director,
-        words=words,
-        plan=plan,
-        agent_kind=agent_kind,
-        consume_response=consume_response,
-        request_dir=request_dir,
-    )
-    write_json(project / "03_director/editorial_sequence_plan.json", plan)
+    plan_path = project / "03_director/editorial_sequence_plan.json"
+    base_plan = build_v3_editorial_sequence_plan(director, theme=brief.graphics_theme)
+    plan = None if consume_response else _load_sequence_plan_checkpoint(plan_path, base_plan)
+    if plan is not None:
+        emit(
+            40,
+            f"Resuming from validated V3 direction for {len(plan.sequences)} editorial sequence(s)",
+            task="graphics_layout",
+        )
+    else:
+        plan = base_plan
+        write_json(plan_path, plan)
+        emit(
+            8,
+            f"Grouped {len(director.scenes)} Director beats into {len(plan.sequences)} V3 editorial sequence call(s)",
+            task="graphics_layout",
+        )
+        plan = _plan_sequences(
+            store,
+            episode_id,
+            brief=brief,
+            narration=narration,
+            director=director,
+            words=words,
+            plan=plan,
+            agent_kind=agent_kind,
+            consume_response=consume_response,
+            request_dir=request_dir,
+        )
+        write_json(plan_path, plan)
 
     layouts = _compile_graphics_layouts(plan, director=director, theme=brief.graphics_theme)
     expected_ids = [scene.scene_id for scene in graphics_scenes]
@@ -742,21 +782,35 @@ def generate_graphics_plan(
             f"V3 compiled graphics order differs from Director graphics order; expected={expected_ids}, actual={actual_ids}"
         )
 
-    bundles = legacy._code_layouts(
-        store,
-        episode_id,
-        layouts=layouts,
-        theme=brief.graphics_theme,
-        agent_kind=agent_kind,
-        consume_response=consume_response,
-        request_dir=request_dir,
-    )
-    package = CustomGraphicsPackage(
+    package = None if consume_response else legacy._load_coded_package_checkpoint(
+        project,
         episode_id=episode_id,
         duration_seconds=director.duration_seconds,
         theme=brief.graphics_theme,
-        scenes=bundles,
+        layouts=layouts,
     )
+    if package is not None:
+        emit(
+            62,
+            f"Resuming from {len(package.scenes)} validated custom-scene source checkpoint(s)",
+            task="graphics_coder",
+        )
+    else:
+        bundles = legacy._code_layouts(
+            store,
+            episode_id,
+            layouts=layouts,
+            theme=brief.graphics_theme,
+            agent_kind=agent_kind,
+            consume_response=consume_response,
+            request_dir=request_dir,
+        )
+        package = CustomGraphicsPackage(
+            episode_id=episode_id,
+            duration_seconds=director.duration_seconds,
+            theme=brief.graphics_theme,
+            scenes=bundles,
+        )
     summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
     _validate_graphics_against_director(summary, director)
 
@@ -770,40 +824,46 @@ def generate_graphics_plan(
         fps=brief.fps,
     )
     emit(72, "Checking rendered cue frames, clipping, overlap, and action liveness", task="graphics_builder")
-    try:
-        _validate_custom_graphics_visuals(
-            project,
-            fps=brief.fps,
-            width=brief.width,
-            height=brief.height,
-        )
-    except CustomGraphicsVisualValidationError as exc:
-        package = legacy._repair_visual_failures(
-            store,
-            episode_id,
-            package=package,
-            report=exc.report,
-            brief=brief,
-            request_dir=request_dir,
-            agent_kind=agent_kind,
-            consume_response=consume_response,
-        )
-        summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
-        _validate_graphics_against_director(summary, director)
-        write_custom_graphics_package(
-            project,
-            package,
-            summary,
-            width=brief.width,
-            height=brief.height,
-            fps=brief.fps,
-        )
-        _validate_custom_graphics_visuals(
-            project,
-            fps=brief.fps,
-            width=brief.width,
-            height=brief.height,
-        )
+    max_visual_repairs = legacy._positive_int(
+        "SVF_CUSTOM_GRAPHICS_VISUAL_REPAIR_ATTEMPTS", 3, minimum=1, maximum=4,
+    )
+    for repair_round in range(max_visual_repairs + 1):
+        try:
+            _validate_custom_graphics_visuals(
+                project,
+                fps=brief.fps,
+                width=brief.width,
+                height=brief.height,
+            )
+            break
+        except CustomGraphicsVisualValidationError as exc:
+            if repair_round >= max_visual_repairs:
+                raise
+            emit(
+                76 + min(repair_round, 2) * 3,
+                f"Repairing only failed scenes (visual pass {repair_round + 1}/{max_visual_repairs})",
+                task="graphics_code_repair",
+            )
+            package = legacy._repair_visual_failures(
+                store,
+                episode_id,
+                package=package,
+                report=exc.report,
+                brief=brief,
+                request_dir=request_dir,
+                agent_kind=agent_kind,
+                consume_response=consume_response,
+            )
+            summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
+            _validate_graphics_against_director(summary, director)
+            write_custom_graphics_package(
+                project,
+                package,
+                summary,
+                width=brief.width,
+                height=brief.height,
+                fps=brief.fps,
+            )
 
     emit(88, "Building mixed-media timeline from V3 creative direction", task="graphics_builder")
     build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)

@@ -13,6 +13,7 @@ from shorts_factory.custom_graphics import (
     write_custom_graphics_package,
 )
 from shorts_factory.io import write_json
+from shorts_factory.editorial_graphics import _load_coded_package_checkpoint
 from shorts_factory.models import DirectorPlan, EpisodeBrief
 from shorts_factory.pipeline import _validate_custom_graphics_visuals
 from shorts_factory.rendering.composition import build as build_composition
@@ -153,6 +154,22 @@ def test_custom_source_is_scoped_and_compiles_to_inspectable_package(tmp_path: P
     assert _validate_custom_graphics_visuals(
         tmp_path, fps=60, width=1080, height=1920,
     ).ok is True
+
+    resumed = _load_coded_package_checkpoint(
+        tmp_path,
+        episode_id="custom-graphics",
+        duration_seconds=9,
+        theme="whiteboard",
+        layouts=[layout],
+    )
+    assert resumed == package
+    assert _load_coded_package_checkpoint(
+        tmp_path,
+        episode_id="custom-graphics",
+        duration_seconds=10,
+        theme="whiteboard",
+        layouts=[layout],
+    ) is None
 
 
 @pytest.mark.parametrize("field,value,match", [

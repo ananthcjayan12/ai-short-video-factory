@@ -8,9 +8,11 @@ from shorts_factory.editorial_v3 import (
     V3EditorialSequenceRecord,
     V3LayoutElement,
     _compile_graphics_beat,
+    _load_sequence_plan_checkpoint,
     _normalize_sequence_layout,
     build_v3_editorial_sequence_plan,
 )
+from shorts_factory.io import write_json
 from shorts_factory.models import DirectorPlan, Scene
 
 
@@ -65,6 +67,38 @@ def test_v3_creative_contract_has_no_phrase_anchor_or_checkpoint_fields():
     assert "anchor_occurrence" not in V3Choreography.model_fields
     assert "review_checkpoints" not in V3EditorialBeat.model_fields
     assert "initially_visible" not in V3LayoutElement.model_fields
+
+
+def test_v3_plan_checkpoint_resumes_only_complete_matching_timeline(tmp_path):
+    director = DirectorPlan(
+        episode_id="resume-v3",
+        duration_seconds=4,
+        visual_thesis="Resume accepted creative work.",
+        scenes=[_scene("S01", 0, 4, scene_type="motion_graphic", renderer="hyperframes")],
+    )
+    expected = build_v3_editorial_sequence_plan(director, theme="editorial")
+    saved = expected.model_copy(update={
+        "sequences": [
+            expected.sequences[0].model_copy(update={
+                "layout": V3EditorialSequenceLayout(
+                    sequence_id="Q01",
+                    beats=[V3EditorialBeat(scene_id="S01", renderer="hyperframes")],
+                )
+            })
+        ]
+    })
+    path = tmp_path / "editorial_sequence_plan.json"
+    write_json(path, saved)
+
+    assert _load_sequence_plan_checkpoint(path, expected) == saved
+
+    changed = build_v3_editorial_sequence_plan(
+        director.model_copy(update={"scenes": [
+            _scene("S01", 0, 3.5, scene_type="motion_graphic", renderer="hyperframes")
+        ]}),
+        theme="editorial",
+    )
+    assert _load_sequence_plan_checkpoint(path, changed) is None
 
 
 def test_normalizer_converts_obvious_master_clock_choreography_to_sequence_local():

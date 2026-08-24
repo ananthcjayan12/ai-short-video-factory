@@ -538,6 +538,35 @@ def _code_layouts(
     return [bundles[index] for index in range(len(layouts))]
 
 
+def _load_coded_package_checkpoint(
+    project: Path,
+    *,
+    episode_id: str,
+    duration_seconds: float,
+    theme: GraphicsTheme,
+    layouts: list[CustomGraphicsLayoutPlan],
+) -> CustomGraphicsPackage | None:
+    """Return a fully validated coding checkpoint when its inputs still match."""
+    path = project / "08_graphics/custom_graphics.json"
+    if not path.is_file():
+        return None
+    try:
+        package = load_model(path, CustomGraphicsPackage)
+        if package.episode_id != episode_id or package.theme != theme:
+            return None
+        if abs(package.duration_seconds - duration_seconds) > 0.02:
+            return None
+        if len(package.scenes) != len(layouts):
+            return None
+        for bundle, layout in zip(package.scenes, layouts):
+            if bundle.layout != layout:
+                return None
+            validate_custom_graphics_source(bundle.layout, bundle.source)
+    except (OSError, ValueError, CustomGraphicsSourceError):
+        return None
+    return package
+
+
 def _repair_visual_failures(
     store: ProjectStore,
     episode_id: str,

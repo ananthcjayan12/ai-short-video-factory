@@ -28,7 +28,16 @@ const CUSTOM_GRAPHICS_HELPERS={
   smooth:(value)=>{const p=Math.max(0,Math.min(1,Number(value)||0));return p*p*(3-2*p)},
   progress:(time,start,duration=.65)=>Math.max(0,Math.min(1,(Number(time)-Number(start))/Math.max(.001,Number(duration)))),
   setVisible:(element,value)=>{if(element)element.style.opacity=String(Math.max(0,Math.min(1,Number(value)||0)))},
-  setTransform:(element,{x=0,y=0,scale=1,rotation=0}={})=>{if(element)element.style.transform=`translate(${x}px,${y}px) scale(${scale}) rotate(${rotation}deg)`},
+  setTransform:(element,transformOrX={},legacyY=0,legacyScale=1,legacyRotation=0)=>{
+    if(!element)return;
+    if(typeof transformOrX==='string'){element.style.transform=transformOrX;return;}
+    if(typeof transformOrX==='number'){
+      element.style.transform=`translate(${transformOrX}px,${legacyY}px) scale(${legacyScale}) rotate(${legacyRotation}deg)`;
+      return;
+    }
+    const {x=0,y=0,scale=1,rotation=transformOrX.rotate??0}=transformOrX||{};
+    element.style.transform=`translate(${x}px,${y}px) scale(${scale}) rotate(${rotation}deg)`;
+  },
   setDraw:(element,value)=>{if(!element)return;const length=Number(element.dataset.pathLength||element.getTotalLength?.()||600);element.dataset.pathLength=String(length);element.style.strokeDasharray=String(length);element.style.strokeDashoffset=String(length*(1-Math.max(0,Math.min(1,Number(value)||0))))},
   setText:(element,value)=>{if(element)element.textContent=String(value??'')},
 };
