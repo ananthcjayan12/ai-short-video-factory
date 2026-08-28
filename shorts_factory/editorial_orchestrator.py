@@ -4,12 +4,18 @@ import copy
 
 
 def register_editorial_tasks() -> None:
-    """Register split graphics stages without removing the legacy graphics_builder route.
+    """Register independently routable editorial / sketch asset stages.
 
-    The base orchestrator predates the editorial sequence planner and exposes a
-    single graphics_builder task. Registering the new stages at package import
-    keeps old project model maps valid while allowing Factory Desk to choose
-    independent models for creative layout, scene coding, and measured repairs.
+    The base orchestrator exposes a single graphics_builder task. This branch
+    keeps the existing task IDs for compatibility and adds two image-first
+    stages so Factory Desk can choose models independently:
+
+    - sketch_asset_planner: translates approved Director scenes into exact
+      whiteboard image prompts + animation prompts;
+    - sketch_imagegen: selects the Codex model that coordinates the system
+      imagegen skill / built-in image_gen call.
+
+    Existing project model maps continue to validate.
     """
 
     from . import orchestrator
@@ -18,6 +24,8 @@ def register_editorial_tasks() -> None:
         {"id": "graphics_layout", "capability": "structured", "group": "Assets"},
         {"id": "graphics_coder", "capability": "structured", "group": "Assets"},
         {"id": "graphics_code_repair", "capability": "structured", "group": "Assets"},
+        {"id": "sketch_asset_planner", "capability": "structured", "group": "Assets"},
+        {"id": "sketch_imagegen", "capability": "code", "group": "Assets"},
     ]
     known = {task["id"] for task in orchestrator.TASKS}
     insertion = next(
@@ -31,28 +39,26 @@ def register_editorial_tasks() -> None:
         insertion += 1
         known.add(definition["id"])
 
+    codex_structured = {
+        **orchestrator.route(
+            "codex", "gpt-5.6-sol", retries=0,
+            fallback_provider="", fallback_model="",
+        ),
+        "reasoning_effort": "medium",
+    }
+    codex_imagegen = {
+        **orchestrator.route(
+            "codex", "gpt-5.6-sol", retries=0,
+            fallback_provider="", fallback_model="",
+        ),
+        "reasoning_effort": "medium",
+    }
     routes = {
-        "graphics_layout": {
-            **orchestrator.route(
-                "codex", "gpt-5.6-sol", retries=0,
-                fallback_provider="", fallback_model="",
-            ),
-            "reasoning_effort": "medium",
-        },
-        "graphics_coder": {
-            **orchestrator.route(
-                "codex", "gpt-5.6-sol", retries=0,
-                fallback_provider="", fallback_model="",
-            ),
-            "reasoning_effort": "medium",
-        },
-        "graphics_code_repair": {
-            **orchestrator.route(
-                "codex", "gpt-5.6-sol", retries=0,
-                fallback_provider="", fallback_model="",
-            ),
-            "reasoning_effort": "medium",
-        },
+        "graphics_layout": copy.deepcopy(codex_structured),
+        "graphics_coder": copy.deepcopy(codex_structured),
+        "graphics_code_repair": copy.deepcopy(codex_structured),
+        "sketch_asset_planner": copy.deepcopy(codex_structured),
+        "sketch_imagegen": copy.deepcopy(codex_imagegen),
     }
     for task_id, values in routes.items():
         orchestrator.DEFAULT_ROUTES.setdefault(task_id, copy.deepcopy(values))
