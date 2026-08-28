@@ -10,8 +10,10 @@ from shorts_factory.models import (
 )
 from shorts_factory.pipeline import _stage_builder_demo_jobs, ensure_demo_jobs, generate_narration
 from shorts_factory.project import ProjectStore
-from shorts_factory.prompt_registry import build_prompt
-from shorts_factory.prompts import narration_prompt, prototype_builder_prompt, story_structure_prompt
+from shorts_factory.prompt_registry import PROMPT_ROOT, PROMPT_VARIABLE, _render, build_prompt
+from shorts_factory.prompts import (
+    narration_prompt, narration_rewrite_prompt, prototype_builder_prompt, story_structure_prompt,
+)
 from shorts_factory.story_quality import assess_narration
 
 
@@ -44,6 +46,29 @@ def test_prompt_registry_rejects_missing_template_variables():
         build_prompt("story_structure")
 
 
+def test_every_prompt_template_treats_payload_braces_as_literal_data():
+    hostile_payload = (
+        'const {captured, tilt} = camera; '
+        'const captured = {captured}; const tilt = {tilt}; '
+        'const recursive = "{scene_id}"; .card{transform:rotate(2deg)}'
+    )
+    for path in PROMPT_ROOT.glob("*.txt"):
+        template = path.read_text(encoding="utf-8")
+        variables = set(PROMPT_VARIABLE.findall(template))
+        if not variables:
+            continue
+        values = {name: f"value-{name}" for name in variables}
+        injected_at = sorted(variables)[0]
+        values[injected_at] = hostile_payload
+
+        rendered = _render(path, values)
+
+        assert hostile_payload in rendered, path.name
+        assert "{captured}" in rendered, path.name
+        assert "{tilt}" in rendered, path.name
+        assert "{scene_id}" in rendered, path.name
+
+
 def test_narration_prompt_is_a_client_story_written_for_screen_recorded_proof():
     brief = EpisodeBrief(
         episode_id="pain-002",
@@ -69,12 +94,71 @@ def test_narration_prompt_is_a_client_story_written_for_screen_recorded_proof():
 
     prompt = narration_prompt(brief, story)
 
-    assert "experienced practitioner recounting one specific engagement" in prompt
+    assert "curious, quietly confident builder" in prompt
     assert "Do not narrate mouse clicks" in prompt
     assert "FULL CLIENT BRIEF" in prompt
     assert brief.pain_point in prompt
     assert "Name only inputs, fields, states, and decisions actually supplied by the brief" in prompt
-    assert "the smallest practical version another owner could build" in prompt
+    assert "Create a shared discovery when the facts support it" in prompt
+    assert "simple spoken English" in prompt
+    assert "one episode-specific takeaway" in prompt
+    assert "similar or related decision bottleneck" in prompt
+    assert "without assuming they share this exact workflow" in prompt
+    assert "asking them to build a full system" in prompt
+    assert "soft follow-along series CTA" in prompt
+    assert "Use only supplied claim IDs" in prompt
+    assert "every factual statement is grounded and carries supplied claim IDs" in prompt
+    assert "one spoken paragraph for every supplied beat" in prompt
+
+
+def test_narration_rewrite_prompt_repairs_tone_without_weakening_contracts():
+    brief = EpisodeBrief(
+        episode_id="rewrite-01", title="Request review",
+        pain_point="A coordinator has to interpret each incoming request.",
+        industry="Services", role="Coordinator", case_nature="real",
+        backend_summary=["AI extracts the requested fields."],
+        viewer_diy=["Test extraction on five representative requests."],
+    )
+    story = StoryPlan.model_validate({
+        "episode_id": "rewrite-01", "target_seconds": 58, "case_nature": "real",
+        "beats": [
+            {"beat_id": "B01", "purpose": "hook", "summary": "Daily requests", "claim_ids": ["pain-01"], "emotional_register": "curiosity"},
+            {"beat_id": "B02", "purpose": "insight", "summary": "Interpretation matters", "claim_ids": ["pain-01"], "emotional_register": "clarity"},
+            {"beat_id": "B03", "purpose": "solution", "summary": "Extract fields", "claim_ids": ["backend-01"], "emotional_register": "proof"},
+            {"beat_id": "B04", "purpose": "diy", "summary": "Test examples", "claim_ids": ["diy-01"], "emotional_register": "agency"},
+            {"beat_id": "B05", "purpose": "cta", "summary": "Follow along", "claim_ids": [], "emotional_register": "trust"},
+        ],
+    })
+    paragraph_texts = [
+        "A coordinator reviews incoming requests every day.",
+        "The hard part is understanding what each request means.",
+        "We use AI to extract the fields the workflow needs.",
+        "Try the supplied test on a few representative requests.",
+        "Follow along as we share more of these builds.",
+    ]
+    paragraphs = [
+        {"paragraph_id": f"P{index:02d}", "beat_id": f"B{index:02d}", "text": text,
+         "claim_ids": story.beats[index - 1].claim_ids}
+        for index, text in enumerate(paragraph_texts, 1)
+    ]
+    draft = Narration.model_validate({
+        "episode_id": "rewrite-01", "text": " ".join(paragraph_texts),
+        "word_count": len(" ".join(paragraph_texts).split()), "target_seconds": 58,
+        "hook": paragraph_texts[0], "consultation_line": paragraph_texts[-1],
+        "paragraphs": paragraphs,
+    })
+
+    prompt = narration_rewrite_prompt(brief, story, draft, ["draft reads like a feature list"])
+
+    assert "technically correct but emotionally distant" in prompt
+    assert "create a shared discovery" in prompt
+    assert "regular code, company rules, company data, or human review" in prompt
+    assert "one short, practical takeaway earned from this episode" in prompt
+    assert "similar or related problem" in prompt
+    assert "build a sophisticated full system" in prompt
+    assert "soft follow-along invitation" in prompt
+    assert "preserve exact IDs and relevant claim IDs" in prompt
+    assert "without adding unsupported facts" in prompt
 
 
 def test_story_prompts_are_domain_neutral_and_require_a_grounded_spine():
@@ -90,6 +174,11 @@ def test_story_prompts_are_domain_neutral_and_require_a_grounded_spine():
     assert "story_spine" in prompt
     assert "source_gaps" in prompt
     assert "Prefer five substantial beats" in prompt
+    assert "shared-discovery turning insight" in prompt
+    assert "transferable lesson from this specific case" in prompt
+    assert "similar or related bottleneck" in prompt
+    assert "soft continuation of the portfolio series" in prompt
+    assert "Every factual beat must carry exact supplied claim IDs" in prompt
     assert "email PDFs" not in prompt
     assert "NEW, DUPLICATE" not in prompt
 

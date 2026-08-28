@@ -6,11 +6,17 @@ REWRITE PRIORITIES
 - Put the protagonist inside the recurring operational moment immediately.
 - Spend enough time on the pain and turning insight for the solution to feel earned.
 - Preserve one human and causal thread across paragraphs.
-- For real cases, say naturally what we noticed, changed, or built instead of switching to generic product-description voice.
-- Demonstrate the workflow through one representative input and resulting state rather than listing features.
+- Repair narration that is technically correct but emotionally distant: let the listener journey with us as we notice, understand, and solve the grounded problem.
+- When story_spine supports it, create a shared discovery from the apparent problem to the deeper interpretation or decision. Never manufacture uncertainty or an initial assumption.
+- For real cases, say naturally what we noticed, changed, or built instead of switching to generic product-description voice. Use no more than one or two reflective journey moments.
+- Demonstrate the workflow by following one representative input into an understandable decision or state rather than listing features or numbered steps.
+- Replace unnecessary technical jargon with simple spoken language. Clearly distinguish what AI handles from what regular code, company rules, company data, or human review handles when the facts support that boundary.
+- Include one short, practical takeaway earned from this episode rather than generic AI wisdom.
 - Derive all nouns and mechanics from this episode only.
 - Remove choppy feature-list fragments and connect actions with because, but, so, once, which meant, or another natural causal transition.
-- Keep DIY advice compact and make the CTA one restrained sentence of at most 22 words.
+- Turn grounded viewer_diy claims into a compact experiment for a viewer with a similar or related problem; do not assume they should clone the client's workflow or build a sophisticated full system.
+- Make the CTA one soft follow-along invitation to the continuing series, at most 22 words, rather than a consultation or sales pitch unless explicitly required.
+- Vary the language naturally. Do not repair the draft with a rigid fill-in-the-blanks formula or mechanically reuse stock phrases.
 - Do not solve quality problems by inventing missing client details, outcomes, metrics, quotations, or assumptions.
 
 Return only the requested structured narration result.

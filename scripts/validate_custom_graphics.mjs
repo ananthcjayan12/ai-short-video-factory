@@ -154,7 +154,11 @@ try {
     for (const action of layout.actions ?? []) {
       if (action.action === 'hold') continue;
       const at = Number(action.at_seconds);
-      const before = Math.max(0, at - frameSeconds);
+      // A cue at local 0 must be sampled inside the active scene. Sampling at
+      // the exact global boundary can leave the scene renderer inactive (the
+      // compiled start is frame-snapped), which compares stale state and
+      // creates an impossible false-positive repair loop.
+      const before = Math.max(frameSeconds, at - frameSeconds);
       const after = Math.min(duration - frameSeconds, at + Math.max(Number(action.duration_seconds), frameSeconds * 2));
       if (after <= before + frameSeconds) continue;
       await seek(page, Number(layout.start) + before);

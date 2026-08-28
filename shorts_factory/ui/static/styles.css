@@ -274,6 +274,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .job-foot .terminate-job-button { border: 1px solid #ff7660; padding: 7px 10px; color: #fff; background: #a93629; border-radius: 7px; cursor: pointer; font: 800 9px ui-sans-serif, system-ui, sans-serif; letter-spacing: .02em; }
 .job-foot .terminate-job-button:hover { background: #c74233; }
 .job-foot .terminate-job-button:disabled { cursor: wait; opacity: .62; }
+.job-foot .resume-job-button { border: 1px solid var(--mint); padding: 7px 10px; color: var(--ink); background: var(--mint); border-radius: 7px; cursor: pointer; font: 800 9px ui-sans-serif, system-ui, sans-serif; letter-spacing: .02em; }
+.job-foot .resume-job-button:hover { filter: brightness(1.08); }
+.job-foot .resume-job-button:disabled { cursor: wait; opacity: .62; }
 .job-log { max-height: 86px; overflow: auto; margin: 10px 0 0; padding: 9px; border-radius: 8px; color: #b9bdc1; background: #151719; font: 8px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; }
 
 .model-list { display: flex; flex-direction: column; gap: 8px; max-height: 510px; overflow: auto; padding-right: 3px; }

@@ -375,6 +375,15 @@ def record_demos(store: ProjectStore, episode_id: str, *, port: int = 4173) -> l
         outputs: list[Path] = []
         total = max(1, len(jobs))
         for index, job in enumerate(jobs, 1):
+            output_path = project / job.output_path
+            if output_path.is_file():
+                try:
+                    if _duration(output_path) > 0.2:
+                        emit(10 + (index / total) * 80, f"Reusing completed recording {job.job_id}", task="screen_recorder")
+                        outputs.append(output_path)
+                        continue
+                except (OSError, RuntimeError, ValueError):
+                    pass
             emit(10 + ((index - 1) / total) * 80, f"Recording {job.job_id}", task="screen_recorder")
             job_path = project / "05_asset_jobs" / f"{job.job_id}.json"
             r = subprocess.run([str(node_binary()), str(repo_root / "scripts/record_demo.mjs"), str(job_path), str(project)],
@@ -382,7 +391,7 @@ def record_demos(store: ProjectStore, episode_id: str, *, port: int = 4173) -> l
             (project / "06_recordings" / f"{job.job_id}.log").write_text((r.stdout or "") + "\n" + (r.stderr or ""), encoding="utf-8")
             if r.returncode != 0:
                 raise RuntimeError(f"Playwright recording failed for {job.job_id}: {(r.stderr or r.stdout)[-3000:]}")
-            outputs.append(project / job.output_path)
+            outputs.append(output_path)
         _attach_recordings_to_plan(project, [job.model_dump(mode="json") for job in jobs])
         store.transition(episode_id, EpisodeStage.ASSETS_READY)
         emit(100, f"Recorded {len(outputs)} screen demos", task="screen_recorder")
@@ -793,6 +802,39 @@ def _prototype_validation_issues(
     return entrypoint, []
 
 
+def _prototype_repair_prompt_issues(issues: list[PrototypeRepairIssue]) -> list[dict[str, Any]]:
+    """Collapse repeated timeline findings without discarding any distinct defect."""
+    payload: list[dict[str, Any]] = []
+    for issue in issues:
+        item = issue.model_dump(mode="json", by_alias=True)
+        if issue.stage != "visual_qa" or not issue.findings:
+            payload.append(item)
+            continue
+        groups: dict[tuple[Any, ...], dict[str, Any]] = {}
+        for finding in issue.findings:
+            key = (
+                finding.scene_id, finding.viewport, tuple(finding.issues),
+                finding.scene_height, finding.scroll_height,
+            )
+            if key not in groups:
+                groups[key] = {
+                    "scene_id": finding.scene_id,
+                    "viewport": finding.viewport,
+                    "moments": [],
+                    "issues": finding.issues,
+                    "sceneHeight": finding.scene_height,
+                    "scrollHeight": finding.scroll_height,
+                }
+            groups[key]["moments"].append(finding.moment)
+        item["findings"] = list(groups.values())
+        item["message"] = (
+            f"{len(groups)} distinct visual defect group(s) reproduced across "
+            f"{len(issue.findings)} browser checks"
+        )
+        payload.append(item)
+    return payload
+
+
 def _run_prototype_repair_agent(
     *, route: dict[str, Any], prompt: Path, out_dir: Path, timeout: int,
 ) -> tuple[int, str]:
@@ -857,8 +899,8 @@ def repair_prototype(
     out_dir = project / "04_prototype"
     if not out_dir.exists():
         raise RuntimeError("No prototype exists to validate or repair")
-    configured = int(os.getenv("SVF_PROTOTYPE_REPAIR_ATTEMPTS", "2")) if max_attempts is None else max_attempts
-    limit = max(0, min(3, configured))
+    configured = int(os.getenv("SVF_PROTOTYPE_REPAIR_ATTEMPTS", "3")) if max_attempts is None else max_attempts
+    limit = max(0, min(4, configured))
     report_path = project / "_requests/prototype_repair_report.json"
     _, issues = _prototype_validation_issues(store, episode_id)
     if not issues:
@@ -890,7 +932,7 @@ def repair_prototype(
         _archive_prototype_sources(out_dir, attempt_root / "before", inventory_before)
         prompt = prototype_repair_prompt(
             episode_id=episode_id, attempt=attempt_number, max_attempts=limit,
-            issues=[issue.model_dump(mode="json", by_alias=True) for issue in issues],
+            issues=_prototype_repair_prompt_issues(issues),
             source_inventory=inventory_before,
         )
         prompt_path = attempt_root / "prompt.md"
@@ -912,10 +954,12 @@ def repair_prototype(
             atomic_write_text(log_path, str(exc) + "\n")
             provider_issue = PrototypeRepairIssue(stage="repair_provider", message=str(exc))
 
-        if provider_issue:
-            issues_after = [*issues, provider_issue]
-        else:
-            _, issues_after = _prototype_validation_issues(store, episode_id)
+        # Always run fresh deterministic validation. A provider can return a
+        # non-zero status after making valid edits, and stale pre-repair issues
+        # are much less useful to the next attempt than measured current ones.
+        _, issues_after = _prototype_validation_issues(store, episode_id)
+        if provider_issue and issues_after:
+            issues_after.append(provider_issue)
         inventory_after = _prototype_source_inventory(out_dir)
         after_hash = _prototype_inventory_hash(inventory_after)
         attempt = PrototypeRepairAttempt(

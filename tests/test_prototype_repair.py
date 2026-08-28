@@ -79,3 +79,41 @@ def test_failed_prototype_repair_stays_failed_after_limit(tmp_path, monkeypatch)
     assert payload["status"] == "failed"
     assert payload["attempts"][0]["status"] == "failed"
     assert payload["final_issues"]
+
+
+def test_repair_prompt_compacts_repeated_moments_without_losing_defects():
+    issue = PrototypeRepairIssue.model_validate({
+        "stage": "visual_qa",
+        "message": "3 browser checks failed",
+        "findings": [
+            {"scene_id": "S01", "viewport": "phone", "moment": moment,
+             "issues": ["text below 11px (2 elements): 8px span.label; 9px p.note"],
+             "sceneHeight": 844, "scrollHeight": 844}
+            for moment in ["start", "cue @ 1.000s", "end"]
+        ],
+    })
+
+    compact = pipeline._prototype_repair_prompt_issues([issue])
+
+    assert len(compact[0]["findings"]) == 1
+    assert compact[0]["findings"][0]["moments"] == ["start", "cue @ 1.000s", "end"]
+    assert "span.label" in compact[0]["findings"][0]["issues"][0]
+
+
+def test_nonzero_provider_exit_is_accepted_when_fresh_validation_passes(tmp_path, monkeypatch):
+    store, episode_id = _store_with_prototype(tmp_path)
+    issue = PrototypeRepairIssue(stage="static_contract", message="Selector case is invalid")
+    validation_results = iter([(None, [issue]), (store.project_dir(episode_id) / "04_prototype/index.html", [])])
+    monkeypatch.setattr(pipeline, "_prototype_validation_issues", lambda *args: next(validation_results))
+
+    def repaired_then_nonzero(**kwargs):
+        source = kwargs["out_dir"] / "app.js"
+        source.write_text(source.read_text(encoding="utf-8").replace("scene-S05", "scene-s05"), encoding="utf-8")
+        return 1, "a final optional self-check command failed"
+
+    monkeypatch.setattr(pipeline, "_run_prototype_repair_agent", repaired_then_nonzero)
+
+    report = repair_prototype(store, episode_id, max_attempts=1)
+
+    assert report.status == "repaired"
+    assert report.attempts[0].status == "repaired"

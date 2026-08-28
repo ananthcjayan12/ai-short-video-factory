@@ -493,8 +493,18 @@ def _code_layouts(
     )
     completed = 0
     lock = Lock()
+    checkpoint_root = store.project_dir(episode_id) / "08_graphics/checkpoints"
 
     def run(index: int, layout: CustomGraphicsLayoutPlan) -> tuple[int, CustomGraphicsSceneBundle]:
+        checkpoint_path = checkpoint_root / f"{layout.scene_id}.json"
+        if not consume_response and checkpoint_path.is_file():
+            try:
+                checkpoint = load_model(checkpoint_path, CustomGraphicsSceneBundle)
+                if checkpoint.layout == layout:
+                    validate_custom_graphics_source(checkpoint.layout, checkpoint.source)
+                    return index, checkpoint
+            except (OSError, ValueError, CustomGraphicsSourceError):
+                pass
         source, repairs = _generate_custom_source(
             store,
             episode_id,
@@ -504,7 +514,11 @@ def _code_layouts(
             consume_response=consume_response,
             request_dir=request_dir,
         )
-        return index, CustomGraphicsSceneBundle(layout=layout, source=source, repairs=repairs)
+        bundle = CustomGraphicsSceneBundle(layout=layout, source=source, repairs=repairs)
+        # Persist each independent scene immediately. If a sibling worker fails,
+        # Resume can reuse every validated scene instead of restarting the batch.
+        write_json(checkpoint_path, bundle)
+        return index, bundle
 
     bundles: dict[int, CustomGraphicsSceneBundle] = {}
     if workers == 1:

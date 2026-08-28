@@ -78,23 +78,32 @@ try {
         }
         const heading = [...root.querySelectorAll('h1,h2,[role="heading"]')].find(visible);
         if (!heading) issues.push('scene has no visible primary heading');
+        const identify = (element) => {
+          const testid = element.getAttribute('data-testid');
+          if (testid) return `[data-testid="${testid}"]`;
+          if (element.id) return `#${element.id}`;
+          const classes = [...element.classList].slice(0, 3).join('.');
+          return `${element.tagName.toLowerCase()}${classes ? `.${classes}` : ''}`;
+        };
         const tiny = [...root.querySelectorAll('h1,h2,h3,p,span,strong,small,label,button,td,th')]
           .filter((element) => visible(element) && (element.textContent || '').trim())
-          .map((element) => ({ text: element.textContent.trim().replace(/\s+/g, ' ').slice(0, 70), size: parseFloat(getComputedStyle(element).fontSize) }))
-          .filter((item) => item.size < viewport.minFont)
-          .slice(0, 6);
-        if (tiny.length) issues.push(`text below ${viewport.minFont}px: ${tiny.map((item) => `${item.size}px “${item.text}”`).join('; ')}`);
+          .map((element) => ({
+            selector: identify(element),
+            text: element.textContent.trim().replace(/\s+/g, ' ').slice(0, 70),
+            size: parseFloat(getComputedStyle(element).fontSize),
+          }))
+          .filter((item) => item.size < viewport.minFont);
+        if (tiny.length) issues.push(`text below ${viewport.minFont}px (${tiny.length} elements): ${tiny.map((item) => `${item.size}px ${item.selector} “${item.text}”`).join('; ')}`);
         const smallTargets = [...root.querySelectorAll('button,a,input,select,[role="button"]')]
           .filter(visible)
-          .map((element) => ({ label: (element.textContent || element.getAttribute('aria-label') || element.tagName).trim().slice(0, 50), rect: element.getBoundingClientRect() }))
-          .filter((item) => item.rect.height < 40 || item.rect.width < 40)
-          .slice(0, 6);
-        if (smallTargets.length) issues.push(`touch targets below 40px: ${smallTargets.map((item) => item.label).join(', ')}`);
+          .map((element) => ({ selector: identify(element), label: (element.textContent || element.getAttribute('aria-label') || element.tagName).trim().slice(0, 50), rect: element.getBoundingClientRect() }))
+          .filter((item) => item.rect.height < 40 || item.rect.width < 40);
+        if (smallTargets.length) issues.push(`touch targets below 40px (${smallTargets.length} elements): ${smallTargets.map((item) => `${item.selector} “${item.label}”`).join(', ')}`);
         const clipped = [...root.querySelectorAll('*')].filter(visible).filter((element) => {
           const item = element.getBoundingClientRect();
           return item.left < -2 || item.right > innerWidth + 2;
-        }).slice(0, 6);
-        if (clipped.length) issues.push(`visible elements leave the viewport: ${clipped.map((item) => item.getAttribute('data-testid') || item.className || item.tagName).join(', ')}`);
+        });
+        if (clipped.length) issues.push(`visible elements leave the viewport (${clipped.length} elements): ${clipped.map(identify).join(', ')}`);
         return { issues, sceneHeight: Math.round(rect.height), scrollHeight: html.scrollHeight };
         }, { sceneId, viewport, targetTestid: moment.target_testid });
         findings.push({ scene_id: sceneId, viewport: viewport.name, moment: moment.label, ...report });

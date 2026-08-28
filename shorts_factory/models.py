@@ -363,7 +363,7 @@ class PrototypeRepairReport(BaseModel):
     version: Literal["1.0"] = "1.0"
     episode_id: str = Field(min_length=1)
     status: Literal["not_needed", "repaired", "failed"]
-    max_attempts: int = Field(ge=0, le=3)
+    max_attempts: int = Field(ge=0, le=4)
     attempts: list[PrototypeRepairAttempt] = Field(default_factory=list)
     final_issues: list[PrototypeRepairIssue] = Field(default_factory=list)
 

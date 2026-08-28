@@ -612,6 +612,7 @@ function renderJob(job) {
   state.activeJob = job;
   const tray = $("#job-tray");
   const failed = ["failed", "stopped", "interrupted"].includes(job.status);
+  const canResume = failed && job.resumable;
   tray.className = `job-tray ${failed ? "failed" : job.status === "succeeded" ? "done" : ""}`;
   tray.innerHTML = `
     <div class="job-row">
@@ -620,12 +621,34 @@ function renderJob(job) {
       <span class="job-capability">${escapeHtml(job.capability)}</span>
     </div>
     <div class="job-progress"><i style="width:${Number(job.progress || 0)}%"></i></div>
-    <div class="job-foot"><span>${Math.round(Number(job.progress || 0))}% · ${escapeHtml(label(job.status))}</span>${["queued", "running"].includes(job.status) ? `<button class="terminate-job-button" id="stop-job" type="button">Terminate job</button>` : ""}</div>
+    <div class="job-foot"><span>${Math.round(Number(job.progress || 0))}% · ${escapeHtml(label(job.status))}</span>${["queued", "running"].includes(job.status) ? `<button class="terminate-job-button" id="stop-job" type="button">Terminate job</button>` : canResume ? `<button class="resume-job-button" id="resume-job" type="button">Resume failed step</button>` : ""}</div>
     ${state.logs.length ? `<pre class="job-log">${escapeHtml(state.logs.slice(-8).map(formatJobLog).join("\n"))}</pre>` : ""}
   `;
   $("#stop-job")?.addEventListener("click", () => stopJob(job.job_id));
+  $("#resume-job")?.addEventListener("click", () => resumeFailedJob(job.job_id));
   $("#worker-status").className = `worker-status ${["queued", "running"].includes(job.status) ? "busy" : job.status === "failed" ? "failed" : ""}`;
   $("#worker-status span").textContent = ["queued", "running"].includes(job.status) ? "Worker busy" : "Worker ready";
+}
+
+async function resumeFailedJob(jobId) {
+  const button = $("#resume-job");
+  if (button) {
+    button.disabled = true;
+    button.textContent = "Resuming…";
+  }
+  try {
+    state.logs = [];
+    const job = await api(`/api/jobs/${encodeURIComponent(jobId)}/resume`, { method: "POST" });
+    renderJob(job);
+    showToast("Resuming from saved checkpoints");
+    pollJob(job.job_id);
+  } catch (error) {
+    showToast(error.message, true);
+    if (button) {
+      button.disabled = false;
+      button.textContent = "Resume failed step";
+    }
+  }
 }
 
 function formatJobLog(line) {
@@ -715,13 +738,15 @@ async function pollJob(jobId) {
 async function resumeRunningJob() {
   const jobs = await api("/api/jobs");
   const running = jobs.find((job) => ["queued", "running"].includes(job.status));
-  if (!running) return;
-  state.selectedId = running.episode_id;
-  if (!state.detail || state.detail.brief.episode_id !== running.episode_id) {
-    await loadEpisode(running.episode_id);
+  const resumableFailure = jobs.find((job) => job.resumable && ["failed", "stopped", "interrupted"].includes(job.status));
+  const job = running || resumableFailure;
+  if (!job) return;
+  state.selectedId = job.episode_id;
+  if (!state.detail || state.detail.brief.episode_id !== job.episode_id) {
+    await loadEpisode(job.episode_id);
   }
-  renderJob(running);
-  pollJob(running.job_id);
+  renderJob(job);
+  if (running) pollJob(job.job_id);
 }
 
 async function uploadFile(kind, file) {
