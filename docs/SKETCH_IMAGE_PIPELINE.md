@@ -58,6 +58,17 @@ The sketch asset stage only translates that contract into:
 
 This prevents generic illustrations from being generated first and forced into the narration afterward.
 
+## Independent model routing in Factory Desk
+
+This branch registers two extra Assets tasks in the existing model-orchestration UI:
+
+```text
+sketch_asset_planner   structured   image + animation prompt translation
+sketch_imagegen        code         Codex model coordinating imagegen
+```
+
+That means the Director, sketch prompt planner, Codex image generation, prototype builder and other stages can use different models without introducing another application.
+
 ## Codex image generation
 
 Production image generation asks Codex to use its system-provided `imagegen` skill and preferred built-in `image_gen` tool.
@@ -70,11 +81,13 @@ projects/<episode>/08_graphics/images/<scene-id>.png
 
 The branch intentionally does **not** silently fall back to Codex's API-key `scripts/image_gen.py` path. If the built-in tool is unavailable, the stage fails with the retained log so the operator can choose what to do next.
 
-The coordinating Codex model comes from the existing `graphics_builder` model route in Factory Desk. You can override it with:
+The coordinating Codex model comes from the `sketch_imagegen` model route in Factory Desk. You can override it with:
 
 ```bash
 SVF_CODEX_IMAGE_MODEL=<codex-model>
 ```
+
+The image/animation prompt translation itself uses the separately routable `sketch_asset_planner` task.
 
 ## Animation prompts
 
