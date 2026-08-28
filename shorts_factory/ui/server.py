@@ -200,6 +200,61 @@ class ResetRequest(BaseModel):
     confirm: bool = False
 
 
+# Each generating action is the source of truth for its stage.  Before it runs,
+# artifacts produced by later stages must be removed from the active episode so
+# they cannot be mistaken for output based on the new input.
+INVALIDATION_STAGES: dict[str, list[str]] = {
+    "narration": ["01_narration", "02_voice", "03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
+    "voice": ["02_voice", "03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
+    "timing": ["03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
+    "direction": ["03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
+    "assets": ["04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
+    "prototype": ["04_prototype", "05_asset_jobs", "06_recordings", "09_composition", "10_final"],
+    "recordings": ["06_recordings", "09_composition", "10_final"],
+    "graphics": ["08_graphics", "09_composition", "10_final"],
+    "composition": ["09_composition", "10_final"],
+}
+
+INVALIDATION_STATE: dict[str, EpisodeStage] = {
+    "narration": EpisodeStage.INPUT,
+    "voice": EpisodeStage.NARRATION_READY,
+    "timing": EpisodeStage.VOICE_READY,
+    "direction": EpisodeStage.VOICE_READY,
+    "assets": EpisodeStage.DIRECTOR_APPROVED,
+    "prototype": EpisodeStage.DIRECTOR_APPROVED,
+    "recordings": EpisodeStage.ASSETS_READY,
+    "graphics": EpisodeStage.ASSETS_READY,
+    "composition": EpisodeStage.ASSETS_READY,
+}
+
+
+def _invalidate_from_stage(episode_id: str, from_stage: str) -> list[str]:
+    """Archive active downstream artifacts and restore the appropriate state."""
+    store = _store()
+    project = store.project_dir(episode_id)
+    folders = INVALIDATION_STAGES[from_stage]
+    # Include microseconds to keep consecutive regenerations independently
+    # recoverable in the archive.
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%S%fZ")
+    archive = project / "_control/archive" / stamp
+    moved: list[str] = []
+    for folder_name in folders:
+        source = project / folder_name
+        if source.exists() and any(source.iterdir()):
+            destination = archive / folder_name
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.move(str(source), str(destination))
+            moved.append(folder_name)
+        source.mkdir(parents=True, exist_ok=True)
+    state = store.state(episode_id)
+    state.stage = INVALIDATION_STATE[from_stage]
+    if from_stage in {"narration", "voice", "timing", "direction"}:
+        state.approved_director = False
+    state.approved_final = False
+    write_json(project / "episode-state.json", state)
+    return moved
+
+
 ACTION_SPECS: dict[str, ActionSpec] = {
     "narrate": ActionSpec(action="narrate", label="Generate narration", capability="structured", stage="story", task="narration_writer"),
     "narrate-mock": ActionSpec(action="narrate-mock", label="Draft narration offline", capability="structured", stage="story", task="narration_writer"),
@@ -219,6 +274,34 @@ ACTION_SPECS: dict[str, ActionSpec] = {
     "run-qa": ActionSpec(action="run-qa", label="Run quality check", capability="structured", stage="review", task="final_qc"),
     "render-final": ActionSpec(action="render-final", label="Render final", capability="render", stage="assembly", task="composition_renderer"),
     "approve-final": ActionSpec(action="approve-final", label="Approve final", capability="structured", stage="review", task="final_qc"),
+}
+
+# Regeneration clears the active downstream chain before the job is queued.
+# The previous artifacts are retained in _control/archive by the helper above.
+ACTION_INVALIDATION: dict[str, str] = {
+    "narrate": "narration",
+    "narrate-mock": "narration",
+    "mock-voice": "voice",
+    "generate-voice": "voice",
+    "align-voice": "timing",
+    "direct": "direction",
+    "direct-mock": "direction",
+    "build-prototype": "prototype",
+    "record-demos": "recordings",
+    "generate-graphics": "graphics",
+    "prepare-preview": "composition",
+}
+
+# These actions write validated checkpoints or independently reusable outputs.
+# Resume keeps them active and starts at the narrowest safe continuation action.
+RESUMABLE_ACTIONS = {
+    "generate-voice", "build-prototype", "repair-prototype", "record-demos",
+    "generate-graphics", "prepare-preview", "render-preview", "render-final",
+}
+RESUME_ACTION_MAP = {
+    # A failed build that reached validation already contains a prototype; the
+    # continuation should validate/repair it, not invoke the builder again.
+    "build-prototype": "repair-prototype",
 }
 
 
@@ -450,17 +533,28 @@ class JobQueue:
         with path.open("a", encoding="utf-8") as handle:
             handle.write(event.model_dump_json() + "\n")
 
-    def submit(self, episode_id: str, action: str, request: ActionRequest) -> ProductionJob:
+    def submit(
+        self, episode_id: str, action: str, request: ActionRequest, *,
+        invalidate: bool = True, resumed_from: str | None = None,
+    ) -> ProductionJob:
         for existing in self.recent():
             if existing.status == "queued" or (existing.status == "running" and self._pid_alive(existing.pid)):
                 raise RuntimeError(f"{existing.label} is already using the production worker")
         spec = ACTION_SPECS[action]
+        invalidation_stage = ACTION_INVALIDATION.get(action)
+        moved = _invalidate_from_stage(episode_id, invalidation_stage) if invalidate and invalidation_stage else []
         now = _now()
+        message = (
+            f"Resuming from checkpoints saved by job {resumed_from}"
+            if resumed_from else
+            f"Archived {len(moved)} downstream stage(s); waiting for the production worker"
+            if invalidate and invalidation_stage else "Waiting for the production worker"
+        )
         job = ProductionJob(
             job_id=uuid.uuid4().hex[:12], episode_id=episode_id, action=action,
             label=spec.label, stage=spec.stage, task=spec.task, capability=spec.capability,
-            status="queued", message="Waiting for the production worker",
-            request=request.model_dump(mode="json"), progress=0, resumable=action in {"render-preview", "render-final"},
+            status="queued", message=message,
+            request=request.model_dump(mode="json"), progress=0, resumable=action in RESUMABLE_ACTIONS,
             created_at=now, updated_at=now,
         )
         with self._lock:
@@ -632,6 +726,9 @@ class JobQueue:
         if not path:
             return None
         job = ProductionJob.model_validate(read_json(path))
+        if job.resumable != (job.action in RESUMABLE_ACTIONS):
+            job.resumable = job.action in RESUMABLE_ACTIONS
+            self._save(job)
         if job.status == "running" and job.pid and job_id not in self._processes and not self._pid_alive(job.pid):
             if self._artifact_complete(job):
                 job.status = "succeeded"
@@ -645,6 +742,21 @@ class JobQueue:
             self._save(job)
             self._event(job, job.status, job.progress, job.message)
         return job
+
+    def resume(self, job_id: str) -> ProductionJob | None:
+        original = self.get(job_id)
+        if not original:
+            return None
+        if original.status not in {"failed", "stopped", "interrupted"}:
+            raise RuntimeError("Only a failed, stopped or interrupted job can be resumed")
+        if original.action not in RESUMABLE_ACTIONS:
+            raise RuntimeError(f"{original.label} has no safe checkpoint to resume")
+        action = RESUME_ACTION_MAP.get(original.action, original.action)
+        request = ActionRequest.model_validate(original.request)
+        return self.submit(
+            original.episode_id, action, request,
+            invalidate=False, resumed_from=original.job_id,
+        )
 
     def _artifact_complete(self, job: ProductionJob) -> bool:
         project = _store().project_dir(job.episode_id)
@@ -749,7 +861,9 @@ class JobQueue:
         jobs = []
         for path in PROJECTS_ROOT.glob("*/_control/jobs/*.json"):
             try:
-                jobs.append(ProductionJob.model_validate(read_json(path)))
+                job = ProductionJob.model_validate(read_json(path))
+                job.resumable = job.action in RESUMABLE_ACTIONS
+                jobs.append(job)
             except Exception:
                 continue
         return sorted(jobs, key=lambda item: item.created_at, reverse=True)[:20]
@@ -1110,40 +1224,12 @@ def episode_progress(episode_id: str, limit: int = 100) -> dict[str, Any]:
 def reset_episode(episode_id: str, request: ResetRequest) -> dict[str, Any]:
     if not request.confirm:
         raise HTTPException(status_code=409, detail="Reset requires explicit operator confirmation")
-    store = _store()
-    project = store.project_dir(episode_id)
+    project = _store().project_dir(episode_id)
     if not project.exists():
         raise HTTPException(status_code=404, detail="Episode not found")
-    folders = {
-        "narration": ["01_narration", "02_voice", "03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
-        "voice": ["02_voice", "03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
-        "direction": ["03_director", "04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
-        "assets": ["04_prototype", "05_asset_jobs", "06_recordings", "07_talking_head", "08_graphics", "09_composition", "10_final"],
-        "render": ["09_composition", "10_final"],
-    }[request.from_stage]
-    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    archive = project / "_control/archive" / stamp
-    moved = []
-    for folder_name in folders:
-        source = project / folder_name
-        if source.exists() and any(source.iterdir()):
-            destination = archive / folder_name
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.move(str(source), str(destination))
-            moved.append(folder_name)
-        source.mkdir(parents=True, exist_ok=True)
-    state = store.state(episode_id)
-    stage_by_reset = {
-        "narration": EpisodeStage.INPUT, "voice": EpisodeStage.NARRATION_READY,
-        "direction": EpisodeStage.VOICE_READY, "assets": EpisodeStage.DIRECTOR_APPROVED,
-        "render": EpisodeStage.ASSETS_READY,
-    }
-    state.stage = stage_by_reset[request.from_stage]
-    if request.from_stage in {"narration", "voice", "direction"}:
-        state.approved_director = False
-    state.approved_final = False
-    write_json(project / "episode-state.json", state)
-    return {"message": f"Archived {len(moved)} populated stages", "archive": str(archive), "moved": moved}
+    reset_stage = {"render": "composition"}.get(request.from_stage, request.from_stage)
+    moved = _invalidate_from_stage(episode_id, reset_stage)
+    return {"message": f"Archived {len(moved)} populated stages", "moved": moved}
 
 
 @app.post("/api/episodes/{episode_id}/actions/{action}", response_model=ProductionJob, status_code=202)
@@ -1234,6 +1320,17 @@ def stop_job(job_id: str) -> ProductionJob:
 @app.post("/api/jobs/{job_id}/terminate", response_model=ProductionJob)
 def terminate_job(job_id: str) -> ProductionJob:
     return stop_job(job_id)
+
+
+@app.post("/api/jobs/{job_id}/resume", response_model=ProductionJob, status_code=202)
+def resume_job(job_id: str) -> ProductionJob:
+    try:
+        job = queue.resume(job_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
 
 
 def _safe_project_file(episode_id: str, relative_path: str, root_folder: str | None = None) -> Path:

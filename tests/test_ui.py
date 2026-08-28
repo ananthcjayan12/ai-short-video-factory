@@ -130,6 +130,30 @@ def test_factory_desk_rejects_invalid_episode_and_path_escape(tmp_path, monkeypa
     assert exc_info.value.status_code == 403
 
 
+def test_regeneration_archives_all_downstream_artifacts(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "PROJECTS_ROOT", tmp_path / "projects")
+    store = ProjectStore(server.PROJECTS_ROOT)
+    project = store.create(EpisodeBrief(
+        episode_id="regenerate-ui", title="Regenerate", pain_point="A new narration must replace every dependent asset.",
+        industry="Test", role="Owner",
+    ))
+    for folder, filename in [
+        ("01_narration", "narration.json"), ("02_voice", "voice.json"),
+        ("03_director", "director_plan.json"), ("04_prototype", "index.html"),
+        ("06_recordings", "scene.mp4"), ("08_graphics", "graphics_plan.json"),
+        ("09_composition", "preview.html"), ("10_final", "final.mp4"),
+    ]:
+        (project / folder / filename).write_text("old", encoding="utf-8")
+
+    moved = server._invalidate_from_stage("regenerate-ui", "narration")
+
+    assert {"01_narration", "02_voice", "03_director", "04_prototype", "06_recordings", "08_graphics", "09_composition", "10_final"} <= set(moved)
+    assert not (project / "02_voice/voice.json").exists()
+    assert not (project / "10_final/final.mp4").exists()
+    assert list((project / "_control/archive").glob("*/02_voice/voice.json"))
+    assert store.state("regenerate-ui").stage.value == "input"
+
+
 def test_prototype_route_serves_built_dist_and_relative_assets(tmp_path, monkeypatch):
     monkeypatch.setattr(server, "PROJECTS_ROOT", tmp_path / "projects")
     project = ProjectStore(server.PROJECTS_ROOT)
@@ -239,4 +263,65 @@ def test_starting_worker_is_not_marked_interrupted_before_it_has_a_pid(tmp_path,
 
     assert recovered is not None
     assert recovered.status == "running"
+    test_queue._executor.shutdown(wait=True, cancel_futures=True)
+
+
+def test_failed_graphics_job_resumes_without_invalidating_checkpoints(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "PROJECTS_ROOT", tmp_path / "projects")
+    ProjectStore(server.PROJECTS_ROOT).create(EpisodeBrief(
+        episode_id="resume-graphics", title="Resume graphics",
+        pain_point="A late graphics failure must retain completed scene checkpoints.",
+        industry="Test", role="Owner",
+    ))
+    test_queue = server.JobQueue()
+    now = datetime.now(UTC).isoformat()
+    failed = ProductionJob(
+        job_id="failed-graphics", episode_id="resume-graphics", action="generate-graphics",
+        label="Generate graphics", stage="assets", task="graphics_builder", capability="structured",
+        status="failed", message="One scene failed QA", progress=90,
+        created_at=now, updated_at=now,
+    )
+    test_queue._save(failed)
+    captured = {}
+
+    def fake_submit(episode_id, action, request, **kwargs):
+        captured.update(episode_id=episode_id, action=action, kwargs=kwargs)
+        return failed.model_copy(update={"status": "queued", "resumable": True})
+
+    monkeypatch.setattr(test_queue, "submit", fake_submit)
+
+    resumed = test_queue.resume("failed-graphics")
+
+    assert resumed is not None
+    assert captured["action"] == "generate-graphics"
+    assert captured["kwargs"] == {"invalidate": False, "resumed_from": "failed-graphics"}
+    test_queue._executor.shutdown(wait=True, cancel_futures=True)
+
+
+def test_failed_prototype_build_resumes_at_repair_step(tmp_path, monkeypatch):
+    monkeypatch.setattr(server, "PROJECTS_ROOT", tmp_path / "projects")
+    ProjectStore(server.PROJECTS_ROOT).create(EpisodeBrief(
+        episode_id="resume-prototype", title="Resume prototype",
+        pain_point="A failed validation should not rebuild an existing prototype.",
+        industry="Test", role="Owner",
+    ))
+    test_queue = server.JobQueue()
+    now = datetime.now(UTC).isoformat()
+    failed = ProductionJob(
+        job_id="failed-prototype", episode_id="resume-prototype", action="build-prototype",
+        label="Build prototype", stage="assets", task="prototype_builder", capability="code",
+        status="failed", message="Visual QA failed", progress=90,
+        created_at=now, updated_at=now,
+    )
+    test_queue._save(failed)
+    captured = {}
+    monkeypatch.setattr(
+        test_queue, "submit",
+        lambda episode_id, action, request, **kwargs: captured.update(action=action, kwargs=kwargs) or failed,
+    )
+
+    test_queue.resume("failed-prototype")
+
+    assert captured["action"] == "repair-prototype"
+    assert captured["kwargs"]["invalidate"] is False
     test_queue._executor.shutdown(wait=True, cancel_futures=True)

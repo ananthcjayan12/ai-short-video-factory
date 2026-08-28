@@ -6,12 +6,13 @@ from pathlib import Path
 import typer
 
 from .demo import bootstrap_pain001
+from .editorial_v3 import generate_graphics_plan
 from .io import load_model
 from .models import DirectorPlan, EpisodeBrief, Narration, ProjectSettings
 from .orchestrator import PROVIDERS, provider_health
 from .pipeline import (
     align_voice, approve_director, bootstrap_reference_demo, generate_director_plan, generate_narration,
-    generate_graphics_plan, generate_story_plan, import_talking_head, import_voice, mock_voice, prepare_timeline_preview,
+    generate_story_plan, import_talking_head, import_voice, mock_voice, prepare_timeline_preview,
     record_demos, render_preview, repair_prototype, run_prototype_builder,
     write_prototype_builder_prompt,
 )

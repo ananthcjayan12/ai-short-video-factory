@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 
 
 PROMPT_ROOT = Path(__file__).resolve().parent / "prompt_templates"
+PROMPT_VARIABLE = re.compile(r"(?<!\{)\{([a-z][a-z0-9_]*)\}(?!\})")
 
 
 class PromptTaskSpec(BaseModel):
@@ -40,12 +41,15 @@ def task_specs() -> dict[str, PromptTaskSpec]:
 
 def _render(path: Path, values: dict[str, Any]) -> str:
     text = path.read_text(encoding="utf-8")
-    for key, value in values.items():
-        text = text.replace("{" + key + "}", str(value))
-    missing = sorted(set(re.findall(r"\{([a-z][a-z0-9_]*)\}", text)))
+    # Discover placeholders only in the trusted template, before inserting any
+    # untrusted/generated JSON, CSS or JavaScript. Scanning after substitution
+    # mistakes braces inside payloads (for example `{captured}` or `{tilt}`)
+    # for new prompt variables and can also recursively substitute payload text.
+    required = set(PROMPT_VARIABLE.findall(text))
+    missing = sorted(required - values.keys())
     if missing:
         raise ValueError(f"Missing prompt variables for {path.name}: {', '.join(missing)}")
-    return text
+    return PROMPT_VARIABLE.sub(lambda match: str(values[match.group(1)]), text)
 
 
 def build_prompt(task: str, **values: Any) -> PromptBundle:

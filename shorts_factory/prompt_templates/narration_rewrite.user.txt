@@ -15,4 +15,4 @@ First draft:
 Blocking quality issues:
 {quality_issues}
 
-Rewrite the entire narration. Keep one paragraph per beat, preserve exact IDs and relevant claim IDs, make the top-level text equal the ordered paragraphs, and correct every listed issue without adding unsupported facts.
+Rewrite the entire narration. Keep one paragraph per beat, preserve exact IDs and relevant claim IDs, make the top-level text equal the ordered paragraphs, and correct every listed issue without adding unsupported facts. Preserve the word budget, case nature, hook, and final consultation_line fields required by the existing output contract.

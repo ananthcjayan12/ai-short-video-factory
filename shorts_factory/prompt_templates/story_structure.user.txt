@@ -14,4 +14,4 @@ Viewer DIY steps:
 
 First populate story_spine from the supplied facts. Use null plus source_gaps for any absent initial assumption, stakes, recurring moment, or changed-workday evidence. Then create the smallest coherent beat plan.
 
-The finished plan must preserve one human subject from the opening pain through the turning insight and solution. It should explain what that person repeatedly had to do, why it failed or arrived too late, what we realized, what intelligence we inserted, what deterministic code did after that interpretation, what proof the viewer can observe, and what small version they could build.
+The finished plan must preserve one human subject from the opening pain through the turning insight and solution. It should explain what that person repeatedly had to do, why it failed or arrived too late, what we realized with the viewer, what intelligence we inserted, what deterministic code did after that interpretation, what proof the viewer can observe, one useful lesson earned from this case, and what grounded experiment someone with a similar or related bottleneck could try without cloning the full workflow.

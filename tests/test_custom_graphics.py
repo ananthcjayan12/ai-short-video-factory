@@ -13,8 +13,11 @@ from shorts_factory.custom_graphics import (
     write_custom_graphics_package,
 )
 from shorts_factory.io import write_json
+from shorts_factory import editorial_graphics
+from shorts_factory.editorial_graphics import _code_layouts, _load_coded_package_checkpoint
 from shorts_factory.models import DirectorPlan, EpisodeBrief
 from shorts_factory.pipeline import _validate_custom_graphics_visuals
+from shorts_factory.project import ProjectStore
 from shorts_factory.rendering.composition import build as build_composition
 
 
@@ -122,6 +125,41 @@ def _source() -> CustomGraphicsSource:
     )
 
 
+def test_scene_coding_checkpoint_survives_a_later_sibling_failure(tmp_path, monkeypatch):
+    store = ProjectStore(tmp_path / "projects")
+    store.create(EpisodeBrief(
+        episode_id="scene-checkpoint", title="Scene checkpoint",
+        pain_point="Completed graphics scenes should survive a failed sibling worker.",
+        industry="Test", role="Owner",
+    ))
+    monkeypatch.setenv("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "1")
+    calls = []
+
+    def generate_once(*args, **kwargs):
+        calls.append(kwargs["layout"].scene_id)
+        return _source(), []
+
+    monkeypatch.setattr(editorial_graphics, "_generate_custom_source", generate_once)
+    first = _code_layouts(
+        store, "scene-checkpoint", layouts=[_layout()], theme="whiteboard",
+        agent_kind=None, consume_response=False,
+        request_dir=store.project_dir("scene-checkpoint") / "_requests",
+    )
+    monkeypatch.setattr(
+        editorial_graphics, "_generate_custom_source",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("checkpoint was not reused")),
+    )
+    second = _code_layouts(
+        store, "scene-checkpoint", layouts=[_layout()], theme="whiteboard",
+        agent_kind=None, consume_response=False,
+        request_dir=store.project_dir("scene-checkpoint") / "_requests",
+    )
+
+    assert calls == ["S02"]
+    assert second == first
+    assert (store.project_dir("scene-checkpoint") / "08_graphics/checkpoints/S02.json").is_file()
+
+
 def test_custom_source_is_scoped_and_compiles_to_inspectable_package(tmp_path: Path):
     layout = _layout()
     source = _source()
@@ -153,6 +191,22 @@ def test_custom_source_is_scoped_and_compiles_to_inspectable_package(tmp_path: P
     assert _validate_custom_graphics_visuals(
         tmp_path, fps=60, width=1080, height=1920,
     ).ok is True
+
+    resumed = _load_coded_package_checkpoint(
+        tmp_path,
+        episode_id="custom-graphics",
+        duration_seconds=9,
+        theme="whiteboard",
+        layouts=[layout],
+    )
+    assert resumed == package
+    assert _load_coded_package_checkpoint(
+        tmp_path,
+        episode_id="custom-graphics",
+        duration_seconds=10,
+        theme="whiteboard",
+        layouts=[layout],
+    ) is None
 
 
 @pytest.mark.parametrize("field,value,match", [

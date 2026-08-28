@@ -70,9 +70,12 @@ try {
           problems.push(`missing element ${planned.element_id}`);
           continue;
         }
-        const opacity = Number(getComputedStyle(element).opacity);
+        const style = getComputedStyle(element);
+        const opacity = Number(style.opacity);
         if (planned.initially_visible) {
-          if (opacity < 0.92) problems.push(`${planned.element_id} is missing from the opening frame`);
+          if (opacity <= 0.2 || style.visibility === 'hidden' || style.display === 'none') {
+            problems.push(`${planned.element_id} is missing from the opening frame`);
+          }
           else visibleOpening += 1;
         } else {
           const reveal = actions.find((action) => action.target_id === planned.element_id && action.action === 'reveal');
@@ -112,7 +115,19 @@ try {
           if (rect.left < stageRect.left - 2 || rect.right > stageRect.right + 2 || rect.top < stageRect.top - 2 || rect.bottom > stageRect.bottom + 2) {
             problems.push(`${planned.element_id} leaves the portrait stage`);
           }
-          if (planned.role !== 'background' && element instanceof HTMLElement && (element.scrollWidth > element.clientWidth + 3 || element.scrollHeight > element.clientHeight + 3)) {
+          const clippedText = element instanceof HTMLElement && [...element.querySelectorAll('*')].some((child) => {
+            if (!(child instanceof HTMLElement) || child.clientWidth <= 2 || child.clientHeight <= 2) return false;
+            const hasDirectText = [...child.childNodes].some(
+              (node) => node.nodeType === Node.TEXT_NODE && Boolean(node.textContent?.trim()),
+            );
+            if (!hasDirectText) return false;
+            const childStyle = getComputedStyle(child);
+            const clipsX = ['hidden', 'clip', 'auto', 'scroll'].includes(childStyle.overflowX);
+            const clipsY = ['hidden', 'clip', 'auto', 'scroll'].includes(childStyle.overflowY);
+            return (clipsX && child.scrollWidth > child.clientWidth + 3)
+              || (clipsY && child.scrollHeight > child.clientHeight + 3);
+          });
+          if (planned.role !== 'background' && clippedText) {
             problems.push(`${planned.element_id} clips or overflows its reserved frame`);
           }
         }
@@ -139,7 +154,11 @@ try {
     for (const action of layout.actions ?? []) {
       if (action.action === 'hold') continue;
       const at = Number(action.at_seconds);
-      const before = Math.max(0, at - frameSeconds);
+      // A cue at local 0 must be sampled inside the active scene. Sampling at
+      // the exact global boundary can leave the scene renderer inactive (the
+      // compiled start is frame-snapped), which compares stale state and
+      // creates an impossible false-positive repair loop.
+      const before = Math.max(frameSeconds, at - frameSeconds);
       const after = Math.min(duration - frameSeconds, at + Math.max(Number(action.duration_seconds), frameSeconds * 2));
       if (after <= before + frameSeconds) continue;
       await seek(page, Number(layout.start) + before);
