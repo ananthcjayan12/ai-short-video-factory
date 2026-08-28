@@ -4,9 +4,7 @@ import base64
 import json
 import os
 import shlex
-import shutil
 import subprocess
-import time
 from pathlib import Path
 from typing import Any
 
@@ -46,7 +44,10 @@ class SketchSceneAsset(BaseModel):
     draw_order: list[str] = Field(min_length=2, max_length=12)
     focal_elements: list[str] = Field(min_length=1, max_length=10)
     camera_move: str = Field(min_length=2, max_length=180)
-    final_hold: str = Field(default="Hold the completed drawing cleanly for the final beat.", min_length=10)
+    final_hold: str = Field(
+        default="Hold the completed drawing cleanly for the final beat.",
+        min_length=10,
+    )
 
 
 class SketchAssetPlan(BaseModel):
@@ -94,7 +95,11 @@ def _asset_prompt(
             "industry": brief.industry,
             "role": brief.role,
             "graphics_theme": brief.graphics_theme,
-            "canvas": {"width": brief.width, "height": brief.height, "fps": brief.fps},
+            "canvas": {
+                "width": brief.width,
+                "height": brief.height,
+                "fps": brief.fps,
+            },
             "full_narration": narration.text,
         },
         "director_visual_thesis": director.visual_thesis,
@@ -117,16 +122,16 @@ def _asset_prompt(
         "# ROLE\n"
         "You are the image-and-motion translator for an approved vertical sketch-video Director plan.\n"
         "The Director has ALREADY decided which beats are illustrations and which beats are screen recordings. "
-        "Do not add scenes, remove scenes, change timing, or reinterpret the story. Your job is to turn each "
-        "approved graphics scene into one excellent whiteboard keyframe prompt and one image-to-video drawing prompt.\n\n"
+        "Do not add scenes, remove scenes, change timing, or reinterpret the story. Your job is to translate each "
+        "approved graphics scene into one faithful whiteboard keyframe prompt and one image-to-video drawing prompt.\n\n"
         "# IMAGE LANGUAGE\n"
         "Create premium modern whiteboard/sketch illustrations: clean white background, confident black marker/ink "
         "linework, subtle gray shading, restrained teal/blue accents, and yellow/red only for warning or error. "
         "The image must feel designed by an experienced editorial illustrator, not like clip-art or a generic AI infographic.\n"
-        "Use one strong visual idea per scene. Preserve natural body language. Prefer concrete objects, arrows, receipts, "
-        "phones, schedules, folders, counters, job cards, and other episode-specific nouns already supported by the brief.\n"
+        "Use one strong visual idea per scene. Preserve natural body language. Prefer concrete episode-specific objects "
+        "already present in the approved Director brief. Do not add stock business symbols just to fill the frame.\n"
         "Do not paste narration into the artwork. Text should be minimal: short labels, amounts, job names, or one tiny question "
-        "only when it materially helps comprehension. Do not invent metrics or customer facts.\n"
+        "only when it materially improves comprehension. Never invent metrics, savings, confidence values or customer facts.\n"
         "Design every frame specifically for 1080x1920 portrait viewing, with useful negative space and a clear focal hierarchy.\n\n"
         "# ANIMATION LANGUAGE\n"
         "The animation prompt must make the finished keyframe appear to be DRAWN LIVE from a blank whiteboard. "
@@ -135,9 +140,9 @@ def _asset_prompt(
         "Strictly forbid morphing, object substitution, extra text, 3D rendering, photorealism, facial distortion, "
         "random particles, and camera shake. The animation must preserve the exact reference composition.\n\n"
         "# TIMING\n"
-        "Use the supplied Whisper word timestamps as editorial context. The image itself is a keyframe; the animation "
-        "should reveal the most important visual idea near the phrase that explains it. Do not return new timestamps or "
-        "change Director scene boundaries.\n\n"
+        "Use the supplied Whisper word timestamps only as editorial context. The image itself is a keyframe; the animation "
+        "should reveal the most important visual idea near the phrase that explains it. Do not return new timestamps and "
+        "do not change Director scene boundaries.\n\n"
         "# OUTPUT\n"
         "Return exactly one SketchSceneAsset for every approved graphics scene, in the same order.\n\n"
         "# INPUT\n"
@@ -145,7 +150,11 @@ def _asset_prompt(
     )
 
 
-def _mock_asset_plan(episode_id: str, director: DirectorPlan, graphics_scenes: list[Any]) -> SketchAssetPlan:
+def _mock_asset_plan(
+    episode_id: str,
+    director: DirectorPlan,
+    graphics_scenes: list[Any],
+) -> SketchAssetPlan:
     return SketchAssetPlan(
         episode_id=episode_id,
         visual_thesis=director.visual_thesis,
@@ -163,7 +172,12 @@ def _mock_asset_plan(episode_id: str, director: DirectorPlan, graphics_scenes: l
                     "Use a subtle camera push and finish with a clean one-second hold. No morphing, no extra text, no 3D, "
                     "no photorealism, no distortion, no camera shake."
                 ),
-                draw_order=["main subject", "supporting objects", "arrows and relationships", "final emphasis"],
+                draw_order=[
+                    "main subject",
+                    "supporting objects",
+                    "arrows and relationships",
+                    "final emphasis",
+                ],
                 focal_elements=[scene.purpose],
                 camera_move="Very gentle portrait push-in toward the final visual proof.",
             )
@@ -176,10 +190,10 @@ def _codex_image_model(store: ProjectStore, episode_id: str) -> str:
     override = os.getenv("SVF_CODEX_IMAGE_MODEL", "").strip()
     if override:
         return override
-    route = resolve_task(load_config(store, episode_id), "graphics_builder")
+    route = resolve_task(load_config(store, episode_id), "sketch_imagegen")
     if route.get("provider") != "codex":
         raise RuntimeError(
-            "Sketch image generation uses Codex imagegen. Route graphics_builder to the Codex provider in Factory Desk "
+            "Sketch image generation uses Codex imagegen. Route sketch_imagegen to the Codex provider in Factory Desk "
             "or set SVF_CODEX_IMAGE_MODEL explicitly."
         )
     return str(route["model"])
@@ -225,7 +239,11 @@ def _run_codex_imagegen(
         f"codex exec --skip-git-repo-check --model {shlex.quote(model)} - "
         f"< {shlex.quote(str(task_file.resolve()))}"
     )
-    emit(35, f"{scene.scene_id}: generating whiteboard keyframe with Codex imagegen", task="graphics_builder")
+    emit(
+        35,
+        f"{scene.scene_id}: generating whiteboard keyframe with Codex imagegen",
+        task="graphics_builder",
+    )
     result = subprocess.run(
         command,
         shell=True,
@@ -235,7 +253,10 @@ def _run_codex_imagegen(
         timeout=max(120, int(os.getenv("SVF_IMAGEGEN_TIMEOUT_SECONDS", "900"))),
     )
     log_path = prompt_file.with_suffix(".imagegen.log")
-    log_path.write_text((result.stdout or "") + "\n" + (result.stderr or ""), encoding="utf-8")
+    log_path.write_text(
+        (result.stdout or "") + "\n" + (result.stderr or ""),
+        encoding="utf-8",
+    )
     if result.returncode != 0 or not output.is_file():
         raise RuntimeError(
             f"Codex imagegen failed for {scene.scene_id}. Built-in image_gen may not be exposed in this Codex session. "
@@ -245,14 +266,22 @@ def _run_codex_imagegen(
 
 def _write_mock_png(path: Path) -> None:
     """Tiny deterministic PNG used only by offline tests/mock mode."""
+
     path.parent.mkdir(parents=True, exist_ok=True)
-    # 1x1 white RGBA PNG. Composition scales it; production never uses this.
-    path.write_bytes(base64.b64decode(
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l4t9WQAAAABJRU5ErkJggg=="
-    ))
+    path.write_bytes(
+        base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/l4t9WQAAAABJRU5ErkJggg=="
+        )
+    )
 
 
-def _run_optional_animation(scene_id: str, image: Path, prompt: Path, output: Path, duration: float) -> bool:
+def _run_optional_animation(
+    scene_id: str,
+    image: Path,
+    prompt: Path,
+    output: Path,
+    duration: float,
+) -> bool:
     template = os.getenv("SVF_GROK_ANIMATE_COMMAND", "").strip()
     if not template:
         return output.is_file()
@@ -264,7 +293,11 @@ def _run_optional_animation(scene_id: str, image: Path, prompt: Path, output: Pa
         duration=f"{duration:.3f}",
         scene_id=scene_id,
     )
-    emit(62, f"{scene_id}: running configured image-to-video animator", task="graphics_builder")
+    emit(
+        62,
+        f"{scene_id}: running configured image-to-video animator",
+        task="graphics_builder",
+    )
     result = subprocess.run(
         command,
         shell=True,
@@ -273,7 +306,10 @@ def _run_optional_animation(scene_id: str, image: Path, prompt: Path, output: Pa
         timeout=max(120, int(os.getenv("SVF_GROK_ANIMATE_TIMEOUT_SECONDS", "1200"))),
     )
     log = output.with_suffix(".animation.log")
-    log.write_text((result.stdout or "") + "\n" + (result.stderr or ""), encoding="utf-8")
+    log.write_text(
+        (result.stdout or "") + "\n" + (result.stderr or ""),
+        encoding="utf-8",
+    )
     if result.returncode != 0:
         raise RuntimeError(f"Animation command failed for {scene_id}; inspect {log}")
     return output.is_file()
@@ -295,8 +331,16 @@ def _compat_scene(scene: Any, asset: SketchSceneAsset) -> GraphicsScenePlan:
         visual_world="clean modern whiteboard sketch",
         opening_state="blank whiteboard before the illustration is drawn",
         payoff_state="completed Director-approved sketch composition",
-        camera_move="push_in" if "push" in asset.camera_move.casefold() else "locked",
-        continuity_object=asset.focal_elements[0] if asset.focal_elements else None,
+        camera_move=(
+            "push_in"
+            if "push" in asset.camera_move.casefold()
+            else "pan_left"
+            if "pan left" in asset.camera_move.casefold()
+            else "pan_right"
+            if "pan right" in asset.camera_move.casefold()
+            else "locked"
+        ),
+        continuity_object=(asset.focal_elements[0] if asset.focal_elements else None),
         objects=[
             GraphicsObject(
                 object_id=object_id,
@@ -305,7 +349,13 @@ def _compat_scene(scene: Any, asset: SketchSceneAsset) -> GraphicsScenePlan:
                 label=(scene.on_screen_text[0] if scene.on_screen_text else scene.purpose)[:72],
                 detail=scene.visual_brief[:240],
                 slot="hero",
-                frame=GraphicsFrame(x=4, y=4, width=92, height=92, depth="foreground"),
+                frame=GraphicsFrame(
+                    x=4,
+                    y=4,
+                    width=92,
+                    height=92,
+                    depth="foreground",
+                ),
                 visual_form="generated raster whiteboard illustration",
                 show_detail=True,
                 initially_visible=True,
@@ -320,7 +370,9 @@ def _compat_scene(scene: Any, asset: SketchSceneAsset) -> GraphicsScenePlan:
                 duration_seconds=max(0.2, min(4.0, duration)),
             )
         ],
-        review_checkpoints=[round(max(0.0, min(duration, duration * 0.5)), 3)],
+        review_checkpoints=[
+            round(max(0.0, min(duration, duration * 0.5)), 3)
+        ],
     )
 
 
@@ -338,12 +390,20 @@ def generate_sketch_graphics_plan(
     narration = load_model(project / "01_narration/narration.json", Narration)
     director_path = project / "03_director/director_plan.approved.json"
     director = load_model(director_path, DirectorPlan)
-    graphics_scenes = [scene for scene in director.scenes if scene.renderer in GRAPHICS_RENDERERS]
+    graphics_scenes = [
+        scene for scene in director.scenes if scene.renderer in GRAPHICS_RENDERERS
+    ]
     if not graphics_scenes:
-        raise RuntimeError("The approved Director plan has no sketch/static graphics scenes")
+        raise RuntimeError(
+            "The approved Director plan has no sketch/static graphics scenes"
+        )
 
     words_path = project / "02_voice/audio_word_timestamps.json"
-    words = load_model(words_path, WordTimestampBundle) if words_path.is_file() else None
+    words = (
+        load_model(words_path, WordTimestampBundle)
+        if words_path.is_file()
+        else None
+    )
     root = project / "08_graphics"
     image_root = root / "images"
     prompt_root = root / "prompts"
@@ -353,15 +413,24 @@ def generate_sketch_graphics_plan(
 
     configured_mock = False
     if agent_kind is None:
-        configured_mock = resolve_task(load_config(store, episode_id), "graphics_builder")["provider_mode"] == "mock"
+        configured_mock = (
+            resolve_task(load_config(store, episode_id), "sketch_asset_planner")[
+                "provider_mode"
+            ]
+            == "mock"
+        )
 
-    emit(10, f"Translating {len(graphics_scenes)} Director beats into whiteboard image assets", task="graphics_builder")
+    emit(
+        10,
+        f"Translating {len(graphics_scenes)} Director beats into whiteboard image assets",
+        task="graphics_builder",
+    )
     if agent_kind == "mock" or configured_mock:
         asset_plan = _mock_asset_plan(episode_id, director, graphics_scenes)
     else:
         agent = _structured_agent(
             store,
-            "graphics_builder",
+            "sketch_asset_planner",
             {"episode_id": episode_id},
             agent_kind=agent_kind,
             consume_response=consume_response,
@@ -383,17 +452,26 @@ def generate_sketch_graphics_plan(
     expected = [scene.scene_id for scene in graphics_scenes]
     actual = [scene.scene_id for scene in asset_plan.scenes]
     if actual != expected:
-        raise RuntimeError(f"Sketch asset order differs from Director order; expected={expected}, actual={actual}")
+        raise RuntimeError(
+            "Sketch asset order differs from Director order; "
+            f"expected={expected}, actual={actual}"
+        )
     write_json(root / "sketch_asset_plan.json", asset_plan)
 
     assets_by_scene: dict[str, str] = {}
     warnings: list[str] = []
-    for index, (director_scene, asset) in enumerate(zip(graphics_scenes, asset_plan.scenes), 1):
+    for index, (director_scene, asset) in enumerate(
+        zip(graphics_scenes, asset_plan.scenes),
+        1,
+    ):
         image = image_root / f"{director_scene.scene_id}.png"
         image_prompt = prompt_root / f"{director_scene.scene_id}.image.md"
         animation_prompt = prompt_root / f"{director_scene.scene_id}.animation.md"
         image_prompt.write_text(asset.image_prompt + "\n", encoding="utf-8")
-        animation_prompt.write_text(asset.animation_prompt + "\n", encoding="utf-8")
+        animation_prompt.write_text(
+            asset.animation_prompt + "\n",
+            encoding="utf-8",
+        )
 
         if not image.is_file():
             if agent_kind == "mock" or configured_mock:
@@ -407,7 +485,11 @@ def generate_sketch_graphics_plan(
                     prompt_file=image_prompt,
                 )
         else:
-            emit(28 + round(index / len(graphics_scenes) * 20), f"{director_scene.scene_id}: reusing existing keyframe", task="graphics_builder")
+            emit(
+                28 + round(index / len(graphics_scenes) * 20),
+                f"{director_scene.scene_id}: reusing existing keyframe",
+                task="graphics_builder",
+            )
 
         animated = animation_root / f"{director_scene.scene_id}.mp4"
         if _run_optional_animation(
@@ -422,15 +504,20 @@ def generate_sketch_graphics_plan(
             chosen = image
             warnings.append(
                 f"{director_scene.scene_id}: animation pending; static keyframe is attached until "
-                "08_graphics/animations/{director_scene.scene_id}.mp4 exists"
+                f"08_graphics/animations/{director_scene.scene_id}.mp4 exists"
             )
-        assets_by_scene[director_scene.scene_id] = chosen.relative_to(project).as_posix()
+        assets_by_scene[director_scene.scene_id] = (
+            chosen.relative_to(project).as_posix()
+        )
 
-    # Attach generated media directly to the approved Director plan. Composition
-    # already prioritizes generated_asset/source_asset, so no HTML graphics runtime is needed.
+    # Composition already prioritizes generated_asset/source_asset, so attaching
+    # real image/video files removes the need for HTML/CSS graphics scenes.
     updated_scenes = [
-        scene.model_copy(update={"generated_asset": assets_by_scene[scene.scene_id]})
-        if scene.scene_id in assets_by_scene else scene
+        scene.model_copy(
+            update={"generated_asset": assets_by_scene[scene.scene_id]}
+        )
+        if scene.scene_id in assets_by_scene
+        else scene
         for scene in director.scenes
     ]
     director = director.model_copy(update={"scenes": updated_scenes})
@@ -441,9 +528,14 @@ def generate_sketch_graphics_plan(
         duration_seconds=director.duration_seconds,
         theme=brief.graphics_theme,
         creative_thesis=asset_plan.visual_thesis,
-        scenes=[_compat_scene(scene, asset) for scene, asset in zip(graphics_scenes, asset_plan.scenes)],
+        scenes=[
+            _compat_scene(scene, asset)
+            for scene, asset in zip(graphics_scenes, asset_plan.scenes)
+        ],
         warnings=warnings,
     )
+    # Retain the repo's existing graphics_plan.json contract so Factory Desk,
+    # artifact browsing and composition do not need a parallel application.
     write_json(root / "graphics_plan.json", compat)
     write_json(
         root / "sketch_manifest.json",
@@ -451,13 +543,29 @@ def generate_sketch_graphics_plan(
             "episode_id": episode_id,
             "pipeline": "director -> codex imagegen -> image-to-video animation",
             "assets": assets_by_scene,
-            "animation_command_configured": bool(os.getenv("SVF_GROK_ANIMATE_COMMAND", "").strip()),
+            "animation_command_configured": bool(
+                os.getenv("SVF_GROK_ANIMATE_COMMAND", "").strip()
+            ),
             "warnings": warnings,
         },
     )
 
-    emit(88, "Building mixed-media preview with generated sketch assets", task="graphics_builder")
-    build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
+    emit(
+        88,
+        "Building mixed-media preview with generated sketch assets",
+        task="graphics_builder",
+    )
+    build_composition(
+        project,
+        preview=True,
+        width=brief.width,
+        height=brief.height,
+        fps=brief.fps,
+    )
     store.transition(episode_id, EpisodeStage.COMPOSITION_READY)
-    emit(100, f"Prepared {len(compat.scenes)} image-first sketch scenes", task="graphics_builder")
+    emit(
+        100,
+        f"Prepared {len(compat.scenes)} image-first sketch scenes",
+        task="graphics_builder",
+    )
     return compat
