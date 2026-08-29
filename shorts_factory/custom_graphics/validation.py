@@ -65,6 +65,8 @@ def _validate_html(layout: CustomGraphicsLayoutPlan, source: CustomGraphicsSourc
     missing = [element.element_id for element in layout.elements if element.element_id not in present]
     if missing:
         parser.issues.append("planned element IDs missing from HTML: " + ", ".join(missing))
+    if "<svg" not in source.html.casefold():
+        parser.issues.append("scene HTML must contain an inline SVG drawing")
     return parser.issues
 
 

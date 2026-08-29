@@ -35,6 +35,7 @@ const context = await browser.newContext({
 const pageCreatedAt = performance.now();
 const page = await context.newPage();
 await page.goto(job.url, { waitUntil: 'networkidle' });
+let screenshotIndex = 0;
 
 async function runAction(action) {
   if (action.action === 'goto') await page.goto(action.value, { waitUntil: 'networkidle' });
@@ -42,7 +43,18 @@ async function runAction(action) {
   if (action.action === 'upload') await page.locator(action.selector).setInputFiles(action.value);
   if (action.action === 'wait') await page.waitForTimeout(action.milliseconds ?? 500);
   if (action.action === 'screenshot') {
-    await page.screenshot({ path: path.resolve(projectDir, action.value), fullPage: true });
+    screenshotIndex += 1;
+    const safeSceneId = String(job.scene_id).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    const safeJobId = String(job.job_id).toLowerCase().replace(/[^a-z0-9_-]+/g, '-');
+    const relativePath = action.value
+      ?? `06_recordings/${safeSceneId}-${safeJobId}-screenshot-${String(screenshotIndex).padStart(2, '0')}.png`;
+    const screenshotPath = path.resolve(projectDir, relativePath);
+    fs.mkdirSync(path.dirname(screenshotPath), { recursive: true });
+    if (action.selector) {
+      await page.locator(action.selector).screenshot({ path: screenshotPath });
+    } else {
+      await page.screenshot({ path: screenshotPath, fullPage: true });
+    }
   }
   if (action.action === 'assert_text') {
     const text = await page.locator(action.selector).innerText();

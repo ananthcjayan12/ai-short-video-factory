@@ -10,7 +10,7 @@ from .integrations import provider_credentials_available
 
 CODEX_MODELS = ["gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"]
 CODEX_REASONING = ["low", "medium", "high", "xhigh", "max", "ultra"]
-GROK_MODELS = ["grok-4.5"]
+GROK_MODELS = ["grok-4.6", "grok-4.5"]
 ANTIGRAVITY_MODELS = [
     "authenticated-default", "gemini-3.6-flash-high", "gemini-3.6-flash-medium",
     "gemini-3.6-flash-low", "gemini-3.5-flash-high", "gemini-3.5-flash-medium",
@@ -50,7 +50,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "grok": {
         "id": "grok", "label": "Grok CLI (SuperGrok)", "mode": "command", "adapter": "native",
-        "executable": "grok", "capabilities": ["structured"], "models": GROK_MODELS,
+        "executable": "grok", "capabilities": ["structured", "video"], "models": GROK_MODELS,
         "reasoning_efforts": ["low", "medium", "high"],
     },
     "antigravity": {
@@ -107,7 +107,7 @@ PROVIDERS: dict[str, dict[str, Any]] = {
     },
     "mock": {
         "id": "mock", "label": "Offline Mock", "mode": "mock", "adapter": "mock",
-        "executable": None, "capabilities": ["structured", "code", "audio", "browser", "talking_head", "render"],
+        "executable": None, "capabilities": ["structured", "code", "audio", "browser", "talking_head", "render", "video"],
         "command_template": "", "models": ["deterministic"]
     },
 }

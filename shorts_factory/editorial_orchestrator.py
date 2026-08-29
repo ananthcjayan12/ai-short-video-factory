@@ -4,16 +4,12 @@ import copy
 
 
 def register_editorial_tasks() -> None:
-    """Register independently routable editorial / sketch asset stages.
+    """Register independently routable legacy editorial graphics stages.
 
     The base orchestrator exposes a single graphics_builder task. This branch
-    keeps the existing task IDs for compatibility and adds two image-first
-    stages so Factory Desk can choose models independently:
-
-    - sketch_asset_planner: translates approved Director scenes into exact
-      whiteboard image prompts + animation prompts;
-    - sketch_imagegen: selects the Codex model that coordinates the system
-      imagegen skill / built-in image_gen call.
+    keeps the structured layout task IDs for compatibility. The active
+    whiteboard renderer itself is deterministic and requires no image or video
+    provider.
 
     Existing project model maps continue to validate.
     """
@@ -24,8 +20,6 @@ def register_editorial_tasks() -> None:
         {"id": "graphics_layout", "capability": "structured", "group": "Assets"},
         {"id": "graphics_coder", "capability": "structured", "group": "Assets"},
         {"id": "graphics_code_repair", "capability": "structured", "group": "Assets"},
-        {"id": "sketch_asset_planner", "capability": "structured", "group": "Assets"},
-        {"id": "sketch_imagegen", "capability": "code", "group": "Assets"},
     ]
     known = {task["id"] for task in orchestrator.TASKS}
     insertion = next(
@@ -46,19 +40,10 @@ def register_editorial_tasks() -> None:
         ),
         "reasoning_effort": "medium",
     }
-    codex_imagegen = {
-        **orchestrator.route(
-            "codex", "gpt-5.6-sol", retries=0,
-            fallback_provider="", fallback_model="",
-        ),
-        "reasoning_effort": "medium",
-    }
     routes = {
         "graphics_layout": copy.deepcopy(codex_structured),
         "graphics_coder": copy.deepcopy(codex_structured),
         "graphics_code_repair": copy.deepcopy(codex_structured),
-        "sketch_asset_planner": copy.deepcopy(codex_structured),
-        "sketch_imagegen": copy.deepcopy(codex_imagegen),
     }
     for task_id, values in routes.items():
         orchestrator.DEFAULT_ROUTES.setdefault(task_id, copy.deepcopy(values))

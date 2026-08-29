@@ -1,15 +1,20 @@
 from __future__ import annotations
 
 import base64
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import json
+import math
 import os
 import shlex
+import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from .integrations import load_env
 from .io import load_model, write_json
 from .models import (
     DirectorPlan,
@@ -78,6 +83,49 @@ def _scene_words(words: WordTimestampBundle | None, scene: Any) -> list[dict[str
         for word in words.words
         if word.end > scene.start and word.start < scene.end
     ]
+
+
+def _timed_animation_prompt(
+    asset: SketchSceneAsset,
+    scene: Any,
+    words: WordTimestampBundle | None,
+) -> str:
+    """Compile narration timestamps and the validated draw order into one motion brief."""
+
+    duration = max(0.1, float(scene.end - scene.start))
+    final_hold_start = max(0.2, duration - min(1.0, duration * 0.15))
+    scene_words = _scene_words(words, scene)
+    steps = asset.draw_order
+    schedule: list[str] = []
+    for index, instruction in enumerate(steps):
+        start_fraction = index / len(steps)
+        end_fraction = (index + 1) / len(steps)
+        start = duration * 0.82 * start_fraction
+        end = duration * 0.82 * end_fraction
+        phrase = ""
+        if scene_words:
+            word_start = min(len(scene_words) - 1, int(len(scene_words) * start_fraction))
+            word_end = max(word_start + 1, int(math.ceil(len(scene_words) * end_fraction)))
+            phrase = " ".join(word["word"] for word in scene_words[word_start:word_end])
+            start = max(0.0, float(scene_words[word_start]["start"]) - float(scene.start))
+            if word_end < len(scene_words):
+                end = max(start + 0.2, float(scene_words[word_end]["start"]) - float(scene.start))
+        start = min(max(0.0, start), max(0.0, final_hold_start - 0.2))
+        end = min(final_hold_start, max(start + 0.2, end))
+        schedule.append(
+            f"- {start:.2f}s–{end:.2f}s, while narration says \"{phrase}\": {instruction}."
+        )
+    return (
+        asset.animation_prompt.strip()
+        + "\n\nREFERENCE MODE\n"
+        "Use <IMAGE_1> only as the exact target composition and style reference; it is the final frame, not the opening frame. "
+        "Frame one must be a clean blank whiteboard. Progressively reveal the reference as genuine black-marker strokes, "
+        "with accents added only after their related black outlines. Do not dissolve, wipe, fade, or morph the completed image into view.\n\n"
+        f"NARRATION-LOCKED DRAW SCHEDULE (scene duration {duration:.2f}s)\n"
+        + "\n".join(schedule)
+        + f"\n- {final_hold_start:.2f}s–{duration:.2f}s: {asset.final_hold}\n"
+        "The supplied narration phrases are timing cues only. Do not render them as captions or extra text."
+    )
 
 
 def _asset_prompt(
@@ -199,6 +247,18 @@ def _codex_image_model(store: ProjectStore, episode_id: str) -> str:
     return str(route["model"])
 
 
+def _grok_video_model(store: ProjectStore, episode_id: str) -> str:
+    override = os.getenv("SVF_GROK_CLI_VIDEO_MODEL", "").strip()
+    if override:
+        return override
+    route = resolve_task(load_config(store, episode_id), "sketch_animator")
+    if route.get("provider") != "grok" or route.get("capability") != "video":
+        raise RuntimeError(
+            "Sketch animation requires the Grok CLI video route. Route sketch_animator to Grok in Factory Desk."
+        )
+    return str(route["model"])
+
+
 def _run_codex_imagegen(
     store: ProjectStore,
     episode_id: str,
@@ -281,38 +341,76 @@ def _run_optional_animation(
     prompt: Path,
     output: Path,
     duration: float,
+    model: str,
 ) -> bool:
-    template = os.getenv("SVF_GROK_ANIMATE_COMMAND", "").strip()
-    if not template:
-        return output.is_file()
+    if output.is_file():
+        emit(58, f"{scene_id}: reusing existing Grok animation", task="graphics_builder")
+        return True
+    grok_bin = os.getenv("SVF_GROK_BIN", "").strip() or shutil.which("grok")
+    if not grok_bin:
+        raise RuntimeError("Grok CLI is not installed or SVF_GROK_BIN is invalid")
     output.parent.mkdir(parents=True, exist_ok=True)
-    command = template.format(
-        image=shlex.quote(str(image.resolve())),
-        prompt=shlex.quote(str(prompt.resolve())),
-        output=shlex.quote(str(output.resolve())),
-        duration=f"{duration:.3f}",
-        scene_id=scene_id,
+    tool_duration = 6 if duration <= 8 else 10
+    task_file = prompt.with_suffix(".grok-video.md")
+    task_file.write_text(
+        (
+            "Use the bundled Imagine skill and Grok CLI's native video-generation tool for this asset.\n\n"
+            "EXECUTION RULES:\n"
+            "- Use reference_to_video because the supplied image is the completed target drawing, not frame one.\n"
+            "- Start on a clean blank whiteboard and draw toward the supplied reference composition.\n"
+            f"- Generate one silent 9:16 video with the supported {tool_duration}-second duration.\n"
+            "- Do not use curl, an xAI API key, the REST API, or an external media command.\n"
+            "- Do not create code, SVG, HTML, or a textual substitute.\n"
+            "- Copy the completed MP4 to the exact destination below.\n"
+            "- If reference_to_video/image_to_video is unavailable in this Grok CLI session, fail clearly.\n\n"
+            f"REFERENCE IMAGE:\n{image.resolve()}\n\n"
+            f"DESTINATION:\n{output.resolve()}\n\n"
+            "ANIMATION BRIEF:\n"
+            + prompt.read_text(encoding="utf-8").strip()
+            + "\n"
+        ),
+        encoding="utf-8",
     )
+    command = [
+        grok_bin,
+        "--always-approve",
+        "--no-subagents",
+        "--max-turns",
+        "8",
+        "--prompt-file",
+        str(task_file.resolve()),
+    ]
+    if model:
+        command[1:1] = ["--model", model]
     emit(
         62,
-        f"{scene_id}: running configured image-to-video animator",
+        f"{scene_id}: animating with Grok CLI Imagine",
         task="graphics_builder",
     )
     result = subprocess.run(
         command,
-        shell=True,
+        cwd=output.parent,
         text=True,
         capture_output=True,
         timeout=max(120, int(os.getenv("SVF_GROK_ANIMATE_TIMEOUT_SECONDS", "1200"))),
     )
     log = output.with_suffix(".animation.log")
-    log.write_text(
-        (result.stdout or "") + "\n" + (result.stderr or ""),
-        encoding="utf-8",
-    )
-    if result.returncode != 0:
-        raise RuntimeError(f"Animation command failed for {scene_id}; inspect {log}")
-    return output.is_file()
+    combined_output = (result.stdout or "") + "\n" + (result.stderr or "")
+    log.write_text(combined_output, encoding="utf-8")
+    if result.returncode != 0 or not output.is_file():
+        normalized_output = combined_output.casefold()
+        if "personal-team-blocked:spending-limit" in normalized_output:
+            raise RuntimeError(
+                "Grok CLI Imagine reached this account's media spending/credit limit (HTTP 403). "
+                "Add Grok credits or upgrade the signed-in account, then retry this scene."
+            )
+        if "not authenticated" in normalized_output or "grok login" in normalized_output:
+            raise RuntimeError("Grok CLI is not authenticated. Run `grok login`, then retry this scene.")
+        raise RuntimeError(
+            f"Grok CLI animation failed for {scene_id}; inspect {log}. "
+            "Confirm `grok login` is complete and this CLI build exposes an Imagine video tool."
+        )
+    return True
 
 
 def _compat_scene(scene: Any, asset: SketchSceneAsset) -> GraphicsScenePlan:
@@ -376,15 +474,46 @@ def _compat_scene(scene: Any, asset: SketchSceneAsset) -> GraphicsScenePlan:
     )
 
 
+def _provider_worker_count(env_name: str, fallback: str, item_count: int) -> int:
+    try:
+        configured = int(os.getenv(env_name, fallback))
+    except ValueError as exc:
+        raise RuntimeError(f"{env_name} must be a positive integer") from exc
+    if configured < 1:
+        raise RuntimeError(f"{env_name} must be at least 1")
+    return max(1, min(item_count, configured))
+
+
+def _archive_asset(project: Path, scene_id: str, path: Path) -> None:
+    if not path.is_file():
+        return
+    archive = project / "08_graphics/versions" / scene_id
+    archive.mkdir(parents=True, exist_ok=True)
+    shutil.move(str(path), str(archive / f"{time.time_ns()}-{path.name}"))
+
+
 def generate_sketch_graphics_plan(
     store: ProjectStore,
     episode_id: str,
     *,
     agent_kind: str | None = None,
     consume_response: bool = False,
+    operation: str = "images",
+    scene_id: str | None = None,
+    suggestion: str | None = None,
 ) -> GraphicsPlan:
-    """Replace HTML/CSS/JS motion graphics with generated image + animation assets."""
+    """Create or revise ordered sketch assets without invalidating sibling scenes."""
 
+    allowed_operations = {"all", "images", "image", "animations", "animation"}
+    if operation not in allowed_operations:
+        raise ValueError(f"Unknown sketch operation: {operation}")
+    if operation in {"image", "animation"} and not scene_id:
+        raise ValueError(f"{operation} requires a scene_id")
+    suggestion = (suggestion or "").strip()
+    if suggestion and operation != "image":
+        raise ValueError("A regeneration suggestion is only valid for one image")
+
+    load_env()
     project = store.project_dir(episode_id)
     brief = store.brief(episode_id)
     narration = load_model(project / "01_narration/narration.json", Narration)
@@ -425,7 +554,12 @@ def generate_sketch_graphics_plan(
         f"Translating {len(graphics_scenes)} Director beats into whiteboard image assets",
         task="graphics_builder",
     )
-    if agent_kind == "mock" or configured_mock:
+    asset_plan_path = root / "sketch_asset_plan.json"
+    if asset_plan_path.is_file() and operation != "all":
+        asset_plan = load_model(asset_plan_path, SketchAssetPlan)
+    elif operation in {"animation", "animations"}:
+        raise RuntimeError("Generate the ordered scene images before animating them")
+    elif agent_kind == "mock" or configured_mock:
         asset_plan = _mock_asset_plan(episode_id, director, graphics_scenes)
     else:
         agent = _structured_agent(
@@ -456,59 +590,153 @@ def generate_sketch_graphics_plan(
             "Sketch asset order differs from Director order; "
             f"expected={expected}, actual={actual}"
         )
-    write_json(root / "sketch_asset_plan.json", asset_plan)
+    write_json(asset_plan_path, asset_plan)
 
-    assets_by_scene: dict[str, str] = {}
+    animation_available = bool(
+        os.getenv("SVF_GROK_BIN", "").strip() or shutil.which("grok")
+    )
+    if operation in {"animation", "animations"} and not animation_available:
+        raise RuntimeError(
+            "Grok CLI is not installed. Install it or set SVF_GROK_BIN, then run `grok login`."
+        )
+    all_jobs = list(enumerate(zip(graphics_scenes, asset_plan.scenes)))
+    known_scene_ids = {scene.scene_id for scene in graphics_scenes}
+    if scene_id and scene_id not in known_scene_ids:
+        raise ValueError(f"Unknown sketch scene: {scene_id}")
+    selected_jobs = [
+        job for job in all_jobs if scene_id is None or job[1][0].scene_id == scene_id
+    ]
     warnings: list[str] = []
-    for index, (director_scene, asset) in enumerate(
-        zip(graphics_scenes, asset_plan.scenes),
-        1,
-    ):
-        image = image_root / f"{director_scene.scene_id}.png"
+
+    for _index, (director_scene, asset) in all_jobs:
         image_prompt = prompt_root / f"{director_scene.scene_id}.image.md"
-        animation_prompt = prompt_root / f"{director_scene.scene_id}.animation.md"
-        image_prompt.write_text(asset.image_prompt + "\n", encoding="utf-8")
-        animation_prompt.write_text(
-            asset.animation_prompt + "\n",
+        prompt_text = asset.image_prompt
+        if suggestion and director_scene.scene_id == scene_id:
+            prompt_text += (
+                "\n\nOPERATOR REGENERATION SUGGESTION (follow this while preserving the Director-approved facts):\n"
+                + suggestion
+            )
+        image_prompt.write_text(prompt_text + "\n", encoding="utf-8")
+        (prompt_root / f"{director_scene.scene_id}.animation.md").write_text(
+            _timed_animation_prompt(asset, director_scene, words) + "\n",
             encoding="utf-8",
         )
 
-        if not image.is_file():
+    if operation in {"all", "images", "image"}:
+        image_workers = _provider_worker_count(
+            "SVF_CODEX_IMAGE_MAX_WORKERS", "3", len(selected_jobs),
+        )
+        emit(
+            22,
+            f"Generating {len(selected_jobs)} ordered image scene(s) on Codex's {image_workers} allowed worker(s)",
+            task="graphics_builder",
+        )
+
+        def generate_image(job: tuple[int, tuple[Any, SketchSceneAsset]]) -> None:
+            _index, (director_scene, asset) = job
+            destination = image_root / f"{director_scene.scene_id}.png"
+            force = operation == "image"
+            if destination.is_file() and not force:
+                emit(38, f"{director_scene.scene_id}: reusing existing keyframe", task="graphics_builder")
+                return
+            prompt_path = prompt_root / f"{director_scene.scene_id}.image.md"
+            generation_asset = asset.model_copy(update={
+                "image_prompt": prompt_path.read_text(encoding="utf-8").strip()
+            })
+            pending = image_root / ".pending" / f"{director_scene.scene_id}-{time.time_ns()}.png"
             if agent_kind == "mock" or configured_mock:
-                _write_mock_png(image)
+                _write_mock_png(pending)
             else:
                 _run_codex_imagegen(
                     store,
                     episode_id,
-                    scene=asset,
-                    output=image,
-                    prompt_file=image_prompt,
+                    scene=generation_asset,
+                    output=pending,
+                    prompt_file=prompt_path,
                 )
-        else:
-            emit(
-                28 + round(index / len(graphics_scenes) * 20),
-                f"{director_scene.scene_id}: reusing existing keyframe",
-                task="graphics_builder",
-            )
+            if force:
+                _archive_asset(project, director_scene.scene_id, destination)
+                _archive_asset(
+                    project,
+                    director_scene.scene_id,
+                    animation_root / f"{director_scene.scene_id}.mp4",
+                )
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(pending, destination)
 
-        animated = animation_root / f"{director_scene.scene_id}.mp4"
-        if _run_optional_animation(
-            director_scene.scene_id,
-            image,
-            animation_prompt,
-            animated,
-            director_scene.end - director_scene.start,
-        ):
-            chosen = animated
+        if image_workers == 1:
+            for job in selected_jobs:
+                generate_image(job)
         else:
-            chosen = image
-            warnings.append(
-                f"{director_scene.scene_id}: animation pending; static keyframe is attached until "
-                f"08_graphics/animations/{director_scene.scene_id}.mp4 exists"
-            )
-        assets_by_scene[director_scene.scene_id] = (
-            chosen.relative_to(project).as_posix()
+            with ThreadPoolExecutor(max_workers=image_workers, thread_name_prefix="codex-image") as executor:
+                futures = [executor.submit(generate_image, job) for job in selected_jobs]
+                for future in as_completed(futures):
+                    future.result()
+    else:
+        image_workers = 0
+
+    if operation in {"all", "animations", "animation"}:
+        grok_video_model = _grok_video_model(store, episode_id)
+        video_workers = _provider_worker_count(
+            "SVF_GROK_VIDEO_MAX_WORKERS", "10", len(selected_jobs),
         )
+        emit(
+            56,
+            f"Animating {len(selected_jobs)} ordered scene(s) on Grok's {video_workers} allowed worker(s)",
+            task="graphics_builder",
+        )
+
+        def animate_scene(job: tuple[int, tuple[Any, SketchSceneAsset]]) -> str | None:
+            _index, (director_scene, _asset) = job
+            image = image_root / f"{director_scene.scene_id}.png"
+            if not image.is_file():
+                return f"{director_scene.scene_id}: image is missing; animation skipped"
+            destination = animation_root / f"{director_scene.scene_id}.mp4"
+            force = operation == "animation"
+            if destination.is_file() and not force:
+                emit(64, f"{director_scene.scene_id}: reusing existing animation", task="graphics_builder")
+                return None
+            pending = animation_root / ".pending" / f"{director_scene.scene_id}-{time.time_ns()}.mp4"
+            try:
+                ready = _run_optional_animation(
+                    director_scene.scene_id,
+                    image,
+                    prompt_root / f"{director_scene.scene_id}.animation.md",
+                    pending,
+                    director_scene.end - director_scene.start,
+                    grok_video_model,
+                )
+            except RuntimeError as exc:
+                return f"{director_scene.scene_id}: Grok animation failed; static image retained. Reason: {exc}"
+            if not ready:
+                return (
+                    f"{director_scene.scene_id}: Grok CLI did not create an animation; static image retained."
+                )
+            if force:
+                _archive_asset(project, director_scene.scene_id, destination)
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(pending, destination)
+            return None
+
+        if video_workers == 1:
+            animation_warnings = [animate_scene(job) for job in selected_jobs]
+        else:
+            with ThreadPoolExecutor(max_workers=video_workers, thread_name_prefix="grok-video") as executor:
+                futures = [executor.submit(animate_scene, job) for job in selected_jobs]
+                animation_warnings = [future.result() for future in as_completed(futures)]
+        warnings.extend(value for value in animation_warnings if value)
+        if operation == "animation" and warnings:
+            raise RuntimeError(warnings[0])
+    else:
+        video_workers = 0
+
+    assets_by_scene: dict[str, str] = {}
+    for director_scene in graphics_scenes:
+        animated = animation_root / f"{director_scene.scene_id}.mp4"
+        image = image_root / f"{director_scene.scene_id}.png"
+        chosen = animated if animated.is_file() else image if image.is_file() else None
+        if chosen:
+            assets_by_scene[director_scene.scene_id] = chosen.relative_to(project).as_posix()
 
     # Composition already prioritizes generated_asset/source_asset, so attaching
     # real image/video files removes the need for HTML/CSS graphics scenes.
@@ -541,11 +769,14 @@ def generate_sketch_graphics_plan(
         root / "sketch_manifest.json",
         {
             "episode_id": episode_id,
-            "pipeline": "director -> codex imagegen -> image-to-video animation",
+            "pipeline": "director -> ordered codex images -> optional per-scene grok animations",
+            "operation": operation,
+            "selected_scene_id": scene_id,
             "assets": assets_by_scene,
-            "animation_command_configured": bool(
-                os.getenv("SVF_GROK_ANIMATE_COMMAND", "").strip()
-            ),
+            "animation_provider": "grok_cli" if animation_available else None,
+            "animation_configured": animation_available,
+            "image_workers": image_workers,
+            "video_workers": video_workers,
             "warnings": warnings,
         },
     )

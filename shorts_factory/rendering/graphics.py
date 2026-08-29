@@ -77,6 +77,20 @@ GRAPHICS_STYLES = r'''
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="process"] .object-shape,.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="channel"] .object-shape,.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="artifact"] .object-shape,.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="evidence"] .object-shape{clip-path:none;background:rgba(255,254,248,.92);border:4px solid var(--ink);border-radius:18px}
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="decision"] .object-shape{background:rgba(244,211,94,.34)}
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="route"] .object-shape{clip-path:none;background:transparent;border-bottom:8px solid var(--teal)}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-stage{overflow:hidden}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-headline{max-height:2.08em;overflow:hidden;overflow-wrap:anywhere}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.has-frame{overflow:hidden}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.has-frame .object-shape{display:grid;grid-template-rows:minmax(0,1fr) auto;gap:6px;padding:4px!important;border:0!important;border-radius:0!important;background:transparent!important;box-shadow:none!important;clip-path:none!important;transform:none!important;text-align:center;overflow:hidden}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.has-frame .object-copy{position:relative!important;inset:auto!important;display:block;max-width:100%;writing-mode:horizontal-tb!important;transform:none!important;overflow:hidden}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.has-frame strong{display:-webkit-box;font-size:clamp(20px,3.1vw,38px);line-height:1.02;overflow:hidden;overflow-wrap:anywhere;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.has-frame .object-detail{display:none}
+.generated-graphic[data-graphics-theme="whiteboard"] .object-form{position:relative;inset:auto;z-index:0;width:100%;height:100%;min-height:0;color:var(--ink)}
+.generated-graphic[data-graphics-theme="whiteboard"] .object-form svg{display:block;width:100%;height:100%;overflow:visible}
+.generated-graphic[data-graphics-theme="whiteboard"] .object-form .sketch-line{fill:none;stroke:currentColor;stroke-width:5;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;pathLength:1;stroke-dasharray:1;stroke-dashoffset:calc(1 - var(--draw-progress,0))}
+.generated-graphic[data-graphics-theme="whiteboard"] .object-form .sketch-accent{stroke:var(--teal)}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="warning"] .object-form .sketch-accent{stroke:var(--coral)}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="check"] .object-form .sketch-accent{stroke:var(--teal);stroke-width:8}
+.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="decision"] .object-shape::before,.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="figure"] .object-shape::before,.generated-graphic[data-graphics-theme="whiteboard"] .graphics-object.is-crossed .object-shape::before{display:none}
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="figure"] .object-shape{background:transparent;color:var(--ink);border:5px solid var(--ink)}
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-object[data-object-type="figure"] span{color:var(--muted-ink)}
 .generated-graphic[data-graphics-theme="whiteboard"] .graphics-connection{stroke-width:5;stroke-dasharray:10 8}
@@ -133,9 +147,9 @@ function renderGeneratedGraphic(scene,localTime,duration){
   for(const [index,object] of objects.entries()){
     object.style.clipPath='';const objectId=object.dataset.objectId;const related=actions.filter(action=>action.target===objectId);const explicitContract=scene.dataset.visibilityContract==='explicit';
     const initiallyVisible=object.dataset.initiallyVisible==='true';const revealAction=related.find(action=>action.action==='reveal');const p=explicitContract?(initiallyVisible?1:(revealAction?graphicsProgress(localTime,revealAction):0)):(revealAction?graphicsProgress(localTime,revealAction):1);const entry=graphicsVector(revealAction?.direction,54*(1-p));
-    const type=object.dataset.objectType;const baseRotation=Number(object.dataset.rotation||0);let tx=entry[0],ty=entry[1]+(1-p)*24,scale=.82+p*.18,rotation=baseRotation+(1-p)*(type==='document'||type==='artifact'?-7:0),opacity=p;
+    const type=object.dataset.objectType;const baseRotation=Number(object.dataset.rotation||0);let tx=entry[0],ty=entry[1]+(1-p)*24,scale=.82+p*.18,rotation=baseRotation+(1-p)*(type==='document'||type==='artifact'?-7:0),opacity=p;object.style.setProperty('--draw-progress',String(graphicsEase(p)));
     const active=related.filter(action=>localTime>=Number(action.at_seconds||0));const latest=active[active.length-1];
-    for(const action of active){const ap=graphicsProgress(localTime,action),vector=graphicsVector(action.direction,70*ap);if(action.action==='move'){tx+=vector[0];ty+=vector[1]}if(action.action==='transform'){scale+=.08*ap;rotation+=action.direction==='clockwise'?8*ap:action.direction==='counterclockwise'?-8*ap:0}if(action.action==='scatter'){tx+=(index%2?1:-1)*58*ap;ty+=(index%3-1)*38*ap}if(action.action==='split'){tx+=(index%2?1:-1)*42*ap}if(action.action==='merge'){tx*=1-ap*.65;ty*=1-ap*.65;scale+=.05*ap}if(action.action==='exit'){opacity*=1-ap;scale*=1-ap*.12}if(action.action==='wipe'){object.style.clipPath=`inset(0 ${100*(1-ap)}% 0 0)`;}if(action.action==='trace'||action.action==='draw')object.style.setProperty('--trace-progress',String(ap));}
+    for(const action of active){const ap=graphicsProgress(localTime,action),vector=graphicsVector(action.direction,70*ap);if(action.action==='move'){tx+=vector[0];ty+=vector[1]}if(action.action==='transform'){scale+=.08*ap;rotation+=action.direction==='clockwise'?8*ap:action.direction==='counterclockwise'?-8*ap:0}if(action.action==='scatter'){tx+=(index%2?1:-1)*58*ap;ty+=(index%3-1)*38*ap}if(action.action==='split'){tx+=(index%2?1:-1)*42*ap}if(action.action==='merge'){tx*=1-ap*.65;ty*=1-ap*.65;scale+=.05*ap}if(action.action==='exit'){opacity*=1-ap;scale*=1-ap*.12}if(action.action==='wipe'){object.style.clipPath=`inset(0 ${100*(1-ap)}% 0 0)`;}if(action.action==='trace'||action.action==='draw'){object.style.setProperty('--trace-progress',String(ap));object.style.setProperty('--draw-progress',String(ap));}}
     object.style.opacity=String(opacity);object.dataset.motionTransform=`translate(${tx}px,${ty}px) scale(${scale}) rotate(${rotation}deg)`;object.style.transform=object.dataset.motionTransform;
     object.classList.toggle('is-highlighted',related.some(action=>action.action==='highlight'&&localTime>=action.at_seconds));object.classList.toggle('is-focused',related.some(action=>action.action==='focus'&&localTime>=action.at_seconds));object.classList.toggle('is-crossed',related.some(action=>action.action==='cross_out'&&localTime>=action.at_seconds));
     object.classList.toggle('is-stamped',related.some(action=>action.action==='stamp'&&localTime>=action.at_seconds));
@@ -147,6 +161,34 @@ function renderGeneratedGraphic(scene,localTime,duration){
   scene.querySelectorAll('.graphics-connection').forEach(line=>{const at=Number(line.dataset.at||0),length=Number(line.dataset.length||500),span=Number(line.dataset.duration||.65),p=graphicsEase(graphicsClamp((localTime-at)/span));line.style.opacity=String(p*.86);line.style.strokeDashoffset=String(length*(1-p));});
 }
 '''
+
+
+def _svg_icon_markup(object_type: str) -> str:
+    """Return a small, fixed SVG vocabulary; scene data never injects markup."""
+    icons = {
+        "building": '<path class="sketch-line" pathLength="1" d="M20 88V25h80v63M12 88h96M34 40h12m14 0h12m14 0h2M34 55h12m14 0h12m14 0h2M34 70h12m14 18V69h14v19"/>',
+        "phone": '<rect class="sketch-line" pathLength="1" x="34" y="10" width="52" height="82" rx="8"/><path class="sketch-line sketch-accent" pathLength="1" d="M48 24h24M49 70l10 8 18-22M56 84h8"/>',
+        "person": '<circle class="sketch-line" pathLength="1" cx="60" cy="28" r="17"/><path class="sketch-line" pathLength="1" d="M28 89c2-28 14-42 32-42s30 14 32 42M45 60l15 14 15-14"/>',
+        "figure": '<circle class="sketch-line" pathLength="1" cx="60" cy="25" r="15"/><path class="sketch-line" pathLength="1" d="M60 40v28M32 52l28-12 28 12M44 91l16-23 16 23"/>',
+        "document": '<path class="sketch-line" pathLength="1" d="M25 9h52l18 18v64H25zM77 9v19h18M40 45h40M40 59h40M40 73h25"/>',
+        "artifact": '<path class="sketch-line" pathLength="1" d="M24 12h72v78H24zM38 30h44M38 45h34M38 60h44"/><path class="sketch-line sketch-accent" pathLength="1" d="M38 76h27"/>',
+        "database": '<path class="sketch-line" pathLength="1" d="M24 25c0-10 16-17 36-17s36 7 36 17v52c0 10-16 17-36 17S24 87 24 77zM24 25c0 10 16 17 36 17s36-7 36-17M24 50c0 10 16 17 36 17s36-7 36-17"/>',
+        "decision": '<path class="sketch-line" pathLength="1" d="M60 8l48 42-48 42L12 50z"/><path class="sketch-line sketch-accent" pathLength="1" d="M43 50l11 11 24-25"/>',
+        "check": '<circle class="sketch-line" pathLength="1" cx="60" cy="50" r="41"/><path class="sketch-line sketch-accent" pathLength="1" d="M35 50l16 17 34-37"/>',
+        "warning": '<path class="sketch-line" pathLength="1" d="M60 8l50 84H10z"/><path class="sketch-line sketch-accent" pathLength="1" d="M60 34v28M60 77h.1"/>',
+        "route": '<path class="sketch-line" pathLength="1" d="M15 78c10-52 31 1 49-38 11-24 25-17 40-6"/><path class="sketch-line sketch-accent" pathLength="1" d="M92 22l14 11-16 8M15 78l8-3M15 78l4 8"/>',
+        "map_region": '<path class="sketch-line" pathLength="1" d="M13 28l26-17 25 13 27-11 17 29-13 42-31 7-23-13-25 9-8-33z"/><circle class="sketch-line sketch-accent" pathLength="1" cx="69" cy="49" r="8"/>',
+        "number": '<path class="sketch-line" pathLength="1" d="M18 84h84M28 75V51M49 75V34M70 75V43M91 75V18"/>',
+        "metric": '<path class="sketch-line" pathLength="1" d="M15 82l23-25 18 10 34-43M77 24h13v13"/>',
+        "status": '<rect class="sketch-line" pathLength="1" x="14" y="20" width="92" height="60" rx="12"/><path class="sketch-line sketch-accent" pathLength="1" d="M30 50h14l8-17 13 35 9-18h16"/>',
+        "channel": '<circle class="sketch-line" pathLength="1" cx="60" cy="50" r="38"/><path class="sketch-line" pathLength="1" d="M22 50h76M60 12c15 16 20 60 0 76M60 12c-15 16-20 60 0 76"/>',
+        "process": '<rect class="sketch-line" pathLength="1" x="13" y="24" width="94" height="52" rx="18"/><path class="sketch-line sketch-accent" pathLength="1" d="M34 50h47M72 40l11 10-11 10"/>',
+    }
+    drawing = icons.get(
+        object_type,
+        '<path class="sketch-line" pathLength="1" d="M17 20h86v60H17zM32 38h56M32 53h42M32 68h50"/>',
+    )
+    return f'<svg viewBox="0 0 120 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">{drawing}</svg>'
 
 
 def _object_markup(item: object, index: int, count: int) -> str:
@@ -169,7 +211,7 @@ def _object_markup(item: object, index: int, count: int) -> str:
         f'data-initially-visible="{str(item.initially_visible).lower()}" '
         f'data-visual-form="{html.escape(item.visual_form)}" data-label="{html.escape(item.label)}" data-detail="{detail}" '
         f'style="--i:{index};--count:{count};{frame_style}">'
-        f'<div class="object-shape"><i class="object-form" aria-hidden="true"></i><div class="object-copy">'
+        f'<div class="object-shape"><div class="object-form">{_svg_icon_markup(item.object_type)}</div><div class="object-copy">'
         f'<strong>{html.escape(item.label)}</strong>{detail_markup}'
         f'</div></div></article>'
     )

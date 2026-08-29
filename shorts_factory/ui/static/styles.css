@@ -120,6 +120,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .eyebrow { margin: 0 0 9px; color: var(--coral-dark); font-size: 10px; font-weight: 900; letter-spacing: .17em; text-transform: uppercase; }
 .workspace h1 { max-width: 760px; margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(32px, 4vw, 54px); font-weight: 500; letter-spacing: -.045em; line-height: .98; }
 .workspace-head-actions { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+.workspace-resume { display:flex; align-items:center; justify-content:space-between; gap:22px; margin:-8px 0 22px; padding:18px 20px; border:1px solid color-mix(in srgb,var(--coral) 45%,var(--line)); border-left:6px solid var(--coral); border-radius:12px; background:color-mix(in srgb,var(--coral) 8%,var(--paper)); }
+.workspace-resume div { min-width:0; }
+.workspace-resume span { display:block; margin-bottom:4px; color:var(--coral); font-size:10px; font-weight:900; letter-spacing:.09em; text-transform:uppercase; }
+.workspace-resume strong { display:block; font-size:16px; }
+.workspace-resume p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.4; overflow-wrap:anywhere; }
+.workspace-resume button { flex:0 0 auto; }
 .stage-pill { padding: 8px 11px; border: 1px solid #b7d8c8; border-radius: 100px; color: var(--mint-dark); background: #e5f8ef; font-size: 10px; font-weight: 900; letter-spacing: .08em; text-transform: uppercase; }
 .episode-code { color: var(--muted); font: 600 11px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
@@ -193,6 +199,26 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
 .asset-info strong { display: block; font-size: 11px; }
 .asset-info span { display: block; margin-top: 3px; overflow: hidden; color: var(--muted); font: 9px ui-monospace, monospace; text-overflow: ellipsis; white-space: nowrap; }
 .asset a { flex: 0 0 auto; color: var(--coral-dark); font-size: 10px; font-weight: 800; text-decoration: none; }
+
+.sketch-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; margin-bottom: 14px; }
+.sketch-asset-card { min-width: 0; padding: 13px; border: 1px solid #ded8cd; border-radius: 13px; background: #faf8f3; }
+.sketch-asset-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; }
+.sketch-asset-head span { display: block; color: var(--muted); font: 8px ui-monospace, monospace; text-transform: uppercase; letter-spacing: .05em; }
+.sketch-asset-head strong { display: block; margin-top: 4px; font-size: 11px; line-height: 1.35; }
+.asset-state { flex: 0 0 auto; padding: 4px 6px; border-radius: 6px; color: #765b22; background: #ffecb5; font-size: 8px; text-transform: uppercase; }
+.asset-state.animation { color: #175b47; background: #c9f3df; }
+.asset-state.missing { color: #873a2a; background: #ffe0d8; }
+.sketch-narration { min-height: 32px; margin: 10px 0; color: #66625b; font-family: Georgia, serif; font-size: 10px; line-height: 1.45; }
+.sketch-media-grid { display: grid; grid-template-columns: 1fr; gap: 8px; }
+.sketch-media-grid.has-animation { grid-template-columns: 1fr 1fr; }
+.sketch-media-grid figure { min-width: 0; margin: 0; }
+.sketch-media-grid figcaption { margin-bottom: 5px; color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
+.sketch-media-grid img, .sketch-media-grid video, .whiteboard-preview, .asset-missing { display: block; width: 100%; aspect-ratio: 9 / 16; object-fit: cover; border: 0; border-radius: 9px; background: #e9e5dc; }
+.asset-missing { display: grid; place-items: center; padding: 12px; color: var(--muted); border: 1px dashed #c9c1b4; font-size: 9px; text-align: center; }
+.asset-suggestion { display: block; margin-top: 10px; }
+.asset-suggestion span { display: block; margin-bottom: 5px; color: var(--muted); font-size: 8px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; }
+.asset-suggestion textarea { width: 100%; padding: 8px 9px; resize: vertical; color: var(--ink); background: white; border: 1px solid #d5cec2; border-radius: 8px; font: 10px/1.4 ui-sans-serif, system-ui, sans-serif; }
+.sketch-asset-actions { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 9px; }
 
 .qa-status { display: flex; align-items: center; gap: 12px; padding: 15px; border-radius: 13px; background: #e9f8f1; }
 .qa-status.bad { background: #ffebe6; }
@@ -320,6 +346,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   .worker-status span { display: none; }
   .workspace { padding: 24px 15px 70px; }
   .workspace-head { align-items: flex-start; flex-direction: column; }
+  .workspace-resume { align-items:flex-start; flex-direction:column; }
   .workspace-head-actions { width: 100%; justify-content: space-between; }
   .workspace h1 { font-size: 39px; }
   .metric-row { grid-template-columns: 1fr 1fr; }
@@ -342,6 +369,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, summary:focus
   .empty-flow b { transform: rotate(90deg); }
   .model-row { grid-template-columns: 1fr; }
   .graphics-theme-control { grid-template-columns: 1fr; }
+  .sketch-gallery { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

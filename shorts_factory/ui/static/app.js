@@ -238,18 +238,16 @@ function directionCard(detail) {
 function assetsCard(detail) {
   const approved = detail.state.approved_director;
   const prototype = detail.artifacts.find((item) => item.kind === "prototype");
-  const graphics = detail.artifacts.find((item) => item.kind === "graphics");
   const media = detail.artifacts.filter((item) => ["audio", "video"].includes(item.kind));
-  const graphicsTheme = detail.brief.graphics_theme || "editorial";
+  const whiteboardScenes = detail.whiteboard_scenes || [];
   return `
     <article class="card">
       <div class="card-head">
-        <div class="card-title"><span class="section-number">04</span><div><h2>Visual assets</h2><p class="card-subtitle">Synthetic demos, presenter clips and deterministic media.</p></div></div>
+        <div class="card-title"><span class="section-number">04</span><div><h2>Visual assets</h2><p class="card-subtitle">Codex creates a clean SVG drawing and word-cued animation for each approved narration scene.</p></div></div>
         <div class="card-actions">
           ${prototype ? `<a class="button button-quiet button-small" href="${escapeHtml(prototype.url)}" target="_blank" rel="noreferrer">Open prototype</a>` : ""}
-          ${graphics ? `<a class="button button-quiet button-small" href="${escapeHtml(graphics.url)}" target="_blank" rel="noreferrer">Open graphics</a>` : ""}
           <button class="button button-dark button-small" data-action="record-demos" ${prototype && approved ? "" : "disabled"} type="button">Record demos</button>
-          <button class="button button-primary button-small" data-action="generate-graphics" ${approved ? "" : "disabled"} type="button">${graphics ? "Regenerate graphics" : "Generate graphics"}</button>
+          <button class="button button-primary button-small" data-action="generate-graphics" ${approved ? "" : "disabled"} type="button">Build whiteboard animation</button>
         </div>
       </div>
       <div class="card-actions" style="justify-content:flex-start;margin-bottom:14px">
@@ -257,16 +255,18 @@ function assetsCard(detail) {
         <button class="button button-quiet button-small" data-action="build-prototype" ${approved ? "" : "disabled"} type="button">Build prototype</button>
         <button class="button button-quiet button-small" data-action="repair-prototype" ${prototype && approved ? "" : "disabled"} type="button">Validate & repair</button>
       </div>
-      <div class="graphics-theme-control">
-        <label for="graphics-theme-select"><span>Graphics theme</span>
-          <select id="graphics-theme-select" ${approved ? "" : "disabled"}>
-            <option value="editorial" ${graphicsTheme === "editorial" ? "selected" : ""}>Editorial documentary</option>
-            <option value="whiteboard" ${graphicsTheme === "whiteboard" ? "selected" : ""}>Whiteboard explainer</option>
-          </select>
-        </label>
-        <p>The selected theme is used consistently across the whole graphics package and is saved when you generate or regenerate.</p>
-      </div>
-      ${graphics ? `<div class="empty-card"><strong>Graphics package ready</strong>Inspectable scene contracts, individual HTML previews, and a master composition are ready for QA and rendering.</div>` : `<div class="empty-card"><strong>Graphics package not generated</strong>Create the scene outline, choreography, object/action contracts, and inspectable HTML previews before rendering.</div>`}
+      ${whiteboardScenes.length ? `<div class="sketch-gallery">${whiteboardScenes.map((item) => `
+        <section class="sketch-asset-card" data-sketch-scene="${escapeHtml(item.scene_id)}">
+          <div class="sketch-asset-head">
+            <div><span>Scene ${item.order} · ${escapeHtml(item.scene_id)} · ${Number(item.duration_seconds).toFixed(1)}s</span><strong>${escapeHtml(item.purpose)}</strong></div>
+            <b class="asset-state ${escapeHtml(item.active_kind)}">${escapeHtml(label(item.active_kind))}</b>
+          </div>
+          <p class="sketch-narration">${escapeHtml(item.narration_excerpt)}</p>
+          <div class="sketch-media-grid">
+            <figure>${item.preview_url ? `<iframe class="whiteboard-preview" src="${escapeHtml(item.preview_url)}" title="${escapeHtml(item.scene_id)} whiteboard animation" loading="lazy"></iframe>` : `<div class="asset-missing">Whiteboard scene not built</div>`}</figure>
+          </div>
+        </section>
+      `).join("")}</div>` : `<div class="empty-card"><strong>No whiteboard scenes yet</strong>Approve the Director plan, then build the whiteboard animation.</div>`}
       ${media.length ? `<div class="asset-list">${media.map((item) => `
         <div class="asset"><div class="asset-info"><strong>${escapeHtml(item.label)}</strong><span>${escapeHtml(item.path)}</span></div><a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">Inspect ↗</a></div>
       `).join("")}</div>` : `<div class="empty-card"><strong>No generated media attached</strong>Graphics can fail soft to deterministic scenes. Presenter clips can be attached per scene above.</div>`}
@@ -292,7 +292,7 @@ function qaCard(detail) {
         <div class="qa-status ${qa.ok ? "" : "bad"}"><span class="qa-mark">${qa.ok ? "✓" : "!"}</span><div><strong>${qa.ok ? "Production rules pass" : "Action required"}</strong><span>${issues.length} ${issues.length === 1 ? "note" : "notes"} · ${qa.scene_count || detail.director?.scenes?.length || 0} scenes</span></div></div>
         ${issues.length ? `<ul class="issue-list">${issues.map((issue) => `<li>${escapeHtml(issue)}</li>`).join("")}</ul>` : ""}
       ` : `<div class="empty-card"><strong>QA waits for direction approval</strong>The check covers timing budgets, presenter beats and missing scene media.</div>`}
-      ${timelinePreview ? `<div class="empty-card"><strong>Interactive timeline ready</strong>Voice, recordings, graphics, captions and exact scene timing are assembled in the browser. This is the fast approval view before MP4 rendering.</div>` : `<div class="empty-card"><strong>Build the timeline preview first</strong>This assembles the complete edit in the browser without rendering an MP4.</div>`}
+      ${timelinePreview ? `<div class="empty-card"><strong>Interactive timeline ready</strong>Voice, recordings, graphics and exact scene timing are assembled in the browser. This is the fast approval view before MP4 rendering.</div>` : `<div class="empty-card"><strong>Build the timeline preview first</strong>This assembles the complete edit in the browser without rendering an MP4.</div>`}
       <div class="render-actions">
         <button class="button button-primary" data-action="prepare-preview" ${approvedDirector ? "" : "disabled"} type="button">${timelinePreview ? "Refresh timeline preview" : "Build timeline preview"}</button>
         ${timelinePreview ? `<a class="button button-dark" href="${escapeHtml(timelinePreview.url)}" target="_blank" rel="noreferrer">Open timeline preview</a>` : ""}
@@ -307,14 +307,14 @@ function qaCard(detail) {
 
 function briefCard(detail) {
   const brief = detail.brief;
-  const durationEditable = detail.state.stage === "input";
+  const durationChangeRebuildsTimeline = detail.state.stage !== "input" || Boolean(detail.narration);
   return `
     <article class="card">
       <div class="card-head"><div class="card-title"><span class="section-number">00</span><div><h2>Production brief</h2><p class="card-subtitle">Case facts with synthetic demo data by default.</p></div></div></div>
       <div class="brief-grid">
         <div class="brief-field"><span>Industry</span><p>${escapeHtml(brief.industry)}</p></div>
         <div class="brief-field"><span>Viewer</span><p>${escapeHtml(brief.role)}</p></div>
-        <div class="brief-field wide"><span>Target duration</span><div class="duration-editor"><div class="input-suffix"><input id="episode-duration" type="number" min="15" max="480" step="1" value="${Number(brief.target_seconds)}" ${durationEditable ? "" : "disabled"} /><b>sec</b></div><button class="button button-dark button-small" id="save-episode-duration" type="button" ${durationEditable ? "" : "disabled"}>Save duration</button></div><small>${durationEditable ? `Currently ${durationLabel(brief.target_seconds)} · choose 15 seconds to 8 minutes.` : "Archive from Narration before changing the master timeline."}</small></div>
+        <div class="brief-field wide"><span>Target duration</span><div class="duration-editor"><div class="input-suffix"><input id="episode-duration" type="number" min="15" max="480" step="1" value="${Number(brief.target_seconds)}" /><b>sec</b></div><button class="button button-dark button-small" id="save-episode-duration" type="button">Save duration</button></div><small>${durationChangeRebuildsTimeline ? "Changing this archives narration and downstream timeline work so it can be rebuilt safely." : `Currently ${durationLabel(brief.target_seconds)} · choose 15 seconds to 8 minutes.`}</small></div>
         <div class="brief-field wide"><span>Pain point</span><p>${escapeHtml(brief.pain_point)}</p></div>
         ${brief.backend_summary?.length ? `<div class="brief-field wide"><span>Backend idea</span><ul class="brief-list">${brief.backend_summary.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul></div>` : ""}
         ${brief.viewer_diy?.length ? `<div class="brief-field wide"><span>Viewer DIY</span>${brief.suggested_stack ? `<p><strong>Stack:</strong> ${escapeHtml(brief.suggested_stack)}</p>` : ""}<ol class="brief-list">${brief.viewer_diy.map((item) => `<li>${escapeHtml(item.replace(/^\d+\.\s*/, ""))}</li>`).join("")}</ol></div>` : ""}
@@ -413,6 +413,32 @@ function recoveryCard() {
     </article>`;
 }
 
+function workspaceResumeHtml() {
+  const job = state.activeJob;
+  const belongsToEpisode = job?.episode_id === state.detail?.brief?.episode_id;
+  const failed = ["failed", "stopped", "interrupted"].includes(job?.status);
+  if (!belongsToEpisode || !failed || !job.resumable) return "";
+  return `
+    <section class="workspace-resume" role="alert">
+      <div>
+        <span>Saved checkpoints available</span>
+        <strong>${escapeHtml(job.label)} did not finish</strong>
+        <p>${escapeHtml(job.message || "The generation worker stopped before completion.")}</p>
+      </div>
+      <button class="button button-primary" data-resume-job="${escapeHtml(job.job_id)}" type="button">Resume failed step</button>
+    </section>
+  `;
+}
+
+function renderWorkspaceResume() {
+  const slot = $("#workspace-resume-slot");
+  if (!slot) return;
+  slot.innerHTML = workspaceResumeHtml();
+  $("[data-resume-job]", slot)?.addEventListener("click", (event) => {
+    resumeFailedJob(event.currentTarget.dataset.resumeJob);
+  });
+}
+
 function renderWorkspace() {
   const detail = state.detail;
   if (!detail) return;
@@ -429,6 +455,7 @@ function renderWorkspace() {
       <div><p class="eyebrow">${escapeHtml(detail.brief.industry)} · ${escapeHtml(detail.brief.role)}</p><h1>${escapeHtml(detail.brief.title)}</h1></div>
       <div class="workspace-head-actions"><span class="episode-code">${escapeHtml(detail.brief.episode_id)}</span><span class="stage-pill">${escapeHtml(label(detail.state.stage))}</span></div>
     </div>
+    <div id="workspace-resume-slot">${workspaceResumeHtml()}</div>
     <section class="progress-panel">
       <div class="progress-summary"><strong>Production progress</strong><span>${detail.summary.progress}% · updated ${shortDate(detail.summary.updated_at)}</span></div>
       <div class="progress-track"><i style="width:${detail.summary.progress}%"></i></div>
@@ -481,6 +508,9 @@ function bindWorkspaceEvents() {
   $$('[data-model-task]', $('#workspace-view')).forEach((row) => {
     const route = state.models.tasks[row.dataset.modelTask];
     if (route?.capability === "audio") refreshVoiceSelect(row, route.provider, route.voice_id || "");
+  });
+  $("[data-resume-job]", $("#workspace-view"))?.addEventListener("click", (event) => {
+    resumeFailedJob(event.currentTarget.dataset.resumeJob);
   });
   $("#save-project-policy")?.addEventListener("click", saveProjectPolicy);
   $("#save-episode-duration")?.addEventListener("click", saveEpisodeDuration);
@@ -551,16 +581,38 @@ async function loadDashboard(selectFirst = true) {
   if (state.selectedId) await loadEpisode(state.selectedId);
 }
 
+function unresolvedResumableJob(jobs, episodeId = null) {
+  const scoped = jobs.filter((job) => !episodeId || job.episode_id === episodeId);
+  return scoped.find((job) => {
+    const failed = job.resumable && ["failed", "stopped", "interrupted"].includes(job.status);
+    const superseded = scoped.some((later) => (
+      later.episode_id === job.episode_id
+      && later.action === job.action
+      && later.status === "succeeded"
+      && String(later.created_at) > String(job.created_at)
+    ));
+    return failed && !superseded;
+  }) || null;
+}
+
 async function loadEpisode(episodeId) {
   state.selectedId = episodeId;
   renderSidebar();
   try {
-    [state.detail, state.models, state.prompts] = await Promise.all([
+    const [detail, models, prompts, jobs] = await Promise.all([
       api(`/api/episodes/${encodeURIComponent(episodeId)}`),
       api(`/api/episodes/${encodeURIComponent(episodeId)}/models`),
       api(`/api/episodes/${encodeURIComponent(episodeId)}/prompts`),
+      api("/api/jobs"),
     ]);
+    state.detail = detail;
+    state.models = models;
+    state.prompts = prompts;
+    const recoveryJob = unresolvedResumableJob(jobs, episodeId);
+    if (recoveryJob) state.activeJob = recoveryJob;
+    else if (state.activeJob?.episode_id === episodeId) state.activeJob = null;
     renderWorkspace();
+    if (recoveryJob) renderJob(recoveryJob);
   } catch (error) {
     showToast(error.message, true);
   }
@@ -610,6 +662,7 @@ async function importAllFilledEpisodes() {
 
 function renderJob(job) {
   state.activeJob = job;
+  renderWorkspaceResume();
   const tray = $("#job-tray");
   const failed = ["failed", "stopped", "interrupted"].includes(job.status);
   const canResume = failed && job.resumable;
@@ -631,11 +684,11 @@ function renderJob(job) {
 }
 
 async function resumeFailedJob(jobId) {
-  const button = $("#resume-job");
-  if (button) {
+  const buttons = $$(`[data-resume-job="${CSS.escape(jobId)}"], #resume-job`);
+  buttons.forEach((button) => {
     button.disabled = true;
     button.textContent = "Resuming…";
-  }
+  });
   try {
     state.logs = [];
     const job = await api(`/api/jobs/${encodeURIComponent(jobId)}/resume`, { method: "POST" });
@@ -644,10 +697,10 @@ async function resumeFailedJob(jobId) {
     pollJob(job.job_id);
   } catch (error) {
     showToast(error.message, true);
-    if (button) {
+    buttons.forEach((button) => {
       button.disabled = false;
       button.textContent = "Resume failed step";
-    }
+    });
   }
 }
 
@@ -690,16 +743,6 @@ async function startAction(action) {
   let body = {};
   if (action === "mock-voice") body.seconds = state.detail?.brief?.target_seconds || 58;
   try {
-    if (action === "generate-graphics") {
-      const selectedTheme = $("#graphics-theme-select")?.value || "editorial";
-      if (selectedTheme !== state.detail?.brief?.graphics_theme) {
-        state.detail = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/graphics-theme`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ graphics_theme: selectedTheme }),
-        });
-      }
-    }
     const job = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/actions/${encodeURIComponent(action)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -738,7 +781,7 @@ async function pollJob(jobId) {
 async function resumeRunningJob() {
   const jobs = await api("/api/jobs");
   const running = jobs.find((job) => ["queued", "running"].includes(job.status));
-  const resumableFailure = jobs.find((job) => job.resumable && ["failed", "stopped", "interrupted"].includes(job.status));
+  const resumableFailure = unresolvedResumableJob(jobs);
   const job = running || resumableFailure;
   if (!job) return;
   state.selectedId = job.episode_id;
@@ -796,6 +839,15 @@ async function saveEpisodeDuration() {
     input?.focus();
     return;
   }
+  const currentSeconds = Number(state.detail?.brief?.target_seconds);
+  if (targetSeconds === currentSeconds) {
+    showToast("Target duration is already set to that value.");
+    return;
+  }
+  const resetsTimeline = state.detail?.state?.stage !== "input" || Boolean(state.detail?.narration);
+  if (resetsTimeline && !confirm("Change the target duration? Narration and all downstream timeline work will be archived so they can be rebuilt safely.")) {
+    return;
+  }
   const button = $("#save-episode-duration");
   button.disabled = true;
   button.textContent = "Saving…";
@@ -803,7 +855,7 @@ async function saveEpisodeDuration() {
     state.detail = await api(`/api/episodes/${encodeURIComponent(state.selectedId)}/duration`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ target_seconds: targetSeconds }),
+      body: JSON.stringify({ target_seconds: targetSeconds, confirm_reset: resetsTimeline }),
     });
     showToast(`Target duration set to ${durationLabel(targetSeconds)}`);
     await loadDashboard(false);

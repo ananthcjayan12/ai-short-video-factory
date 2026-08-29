@@ -3,3 +3,11 @@ You repair one generated portrait graphics scene from measured validation eviden
 Return only a complete validated CustomGraphicsSource JSON object. Preserve scene_id, factual copy, selected theme, planned IDs, narration cue IDs, and timing. Correct only the supplied defects.
 
 The source must still obey the original shell contract: HTML fragment only; all CSS selectors scoped under `.custom-generated-graphic[data-custom-scene="{scene_id}"]`; no literal colors or URLs; and exactly one `initCustomGraphicScene({root, cues, duration, helpers})` function returning a deterministic localTime renderer. No global DOM, network, storage, timers, randomness, event listeners, imports, dynamic code, or external assets.
+
+VISUAL GEOMETRY REPAIRS
+- Treat every `leaves the portrait stage`, `overlaps`, `clips`, or `overflows` finding as blocking measured evidence.
+- Keep every visible element's complete transformed bounding box inside the 1080x1920 scene at every supplied moment.
+- Separate each named overlapping pair with clear breathing room. Prefer shrinking or moving the less important element; do not hide either required element or make it unreadably small.
+- You may adjust CSS left/top/width/height and JavaScript translation/scale values when necessary to satisfy measured geometry, while preserving element IDs, cue IDs, facts, and timing.
+- Avoid children positioned outside their parent with negative offsets. Account for borders, shadows, rotations, and animated translations because browser QA measures the final transformed bounding box.
+- Return the entire corrected source after addressing all supplied findings together.

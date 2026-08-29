@@ -30,9 +30,10 @@ DIRECTOR RULES
 18. The production budgets and talking-head policy are immutable project inputs. Copy the supplied budgets exactly; do not invent or optimize them.
 19. When talking head is ENABLED, prefer a presenter fallback when an asset is missing. When it is DISABLED, prefer a static sketch/image fallback. Never invent proof.
 
-IMAGE-FIRST PRODUCTION EXPECTATION
-- A static sketch scene will become: Director visual_brief → Codex imagegen keyframe → Grok-ready drawing-animation prompt → optional animated MP4.
-- Therefore the Director owns WHAT the image must communicate; image generation owns only HOW faithfully to render that approved brief.
+WHITEBOARD PRODUCTION EXPECTATION
+- A static sketch scene becomes: Director visual_brief → Codex-validated scene contract → Codex-created inline SVG → locked-word-timed CSS/JavaScript drawing and movement.
+- Therefore the Director owns WHAT the scene must communicate; Codex owns HOW to draw a simple, clean version of that approved visual.
+- Favor concrete visual nouns that lead to simple drawings: person, building, phone, document, database, decision, warning, check, route, map, metric, status, or process.
 - Do not leave vague visual briefs such as “show automation,” “show context,” “nice infographic,” or “AI workflow.” Describe the exact visible story.
 
 SCREEN-PROOF EXPECTATION

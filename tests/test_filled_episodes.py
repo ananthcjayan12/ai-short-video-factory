@@ -83,4 +83,13 @@ def test_factory_desk_lists_and_initializes_filled_episode_without_running_pipel
         "/api/episodes/filled-pain-001/duration", json={"target_seconds": 120},
     )
     assert locked.status_code == 409
-    assert "before narration" in locked.json()["detail"]
+    assert "confirmation is required" in locked.json()["detail"]
+
+    confirmed = client.put(
+        "/api/episodes/filled-pain-001/duration",
+        json={"target_seconds": 120, "confirm_reset": True},
+    )
+    assert confirmed.status_code == 200
+    assert confirmed.json()["brief"]["target_seconds"] == 120
+    assert confirmed.json()["state"]["stage"] == "input"
+    assert confirmed.json()["narration"] is None

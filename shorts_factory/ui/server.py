@@ -57,7 +57,7 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PROJECTS_ROOT = REPO_ROOT / "projects"
 STATIC_ROOT = Path(__file__).resolve().parent / "static"
 
-Capability = Literal["structured", "code", "audio", "browser", "talking_head", "render"]
+Capability = Literal["structured", "code", "audio", "browser", "talking_head", "render", "video"]
 
 
 def _failure_summary(lines: list[str], returncode: int) -> str:
@@ -128,6 +128,16 @@ class Artifact(BaseModel):
     url: str
 
 
+class WhiteboardSceneItem(BaseModel):
+    scene_id: str
+    order: int = Field(ge=1)
+    purpose: str
+    narration_excerpt: str
+    duration_seconds: float = Field(gt=0)
+    preview_url: str | None = None
+    active_kind: Literal["missing", "whiteboard"] = "missing"
+
+
 class EpisodeDetail(BaseModel):
     brief: EpisodeBrief
     state: EpisodeState
@@ -138,6 +148,7 @@ class EpisodeDetail(BaseModel):
     director: DirectorPlan | None = None
     qa: dict[str, Any] | None = None
     artifacts: list[Artifact] = Field(default_factory=list)
+    whiteboard_scenes: list[WhiteboardSceneItem] = Field(default_factory=list)
     completed_steps: list[str] = Field(default_factory=list)
 
 
@@ -174,6 +185,7 @@ class ProjectSettingsRequest(BaseModel):
 
 class EpisodeDurationRequest(BaseModel):
     target_seconds: float = Field(ge=15, le=480)
+    confirm_reset: bool = False
 
 
 class EpisodeGraphicsThemeRequest(BaseModel):
@@ -182,6 +194,16 @@ class EpisodeGraphicsThemeRequest(BaseModel):
 
 class ActionRequest(BaseModel):
     seconds: float = Field(default=58.0, ge=5, le=480)
+    scene_id: str | None = Field(default=None, min_length=2, max_length=32)
+    suggestion: str | None = Field(default=None, max_length=1000)
+
+    @field_validator("scene_id", "suggestion")
+    @classmethod
+    def trim_optional_action_text(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip()
+        return cleaned or None
 
 
 class UploadResult(BaseModel):
@@ -268,7 +290,7 @@ ACTION_SPECS: dict[str, ActionSpec] = {
     "build-prototype": ActionSpec(action="build-prototype", label="Build prototype", capability="code", stage="assets", task="prototype_builder"),
     "repair-prototype": ActionSpec(action="repair-prototype", label="Repair prototype", capability="code", stage="assets", task="prototype_repair"),
     "record-demos": ActionSpec(action="record-demos", label="Record screen demos", capability="browser", stage="assets", task="screen_recorder"),
-    "generate-graphics": ActionSpec(action="generate-graphics", label="Generate graphics", capability="structured", stage="assets", task="graphics_builder"),
+    "generate-graphics": ActionSpec(action="generate-graphics", label="Build Codex whiteboard animation", capability="structured", stage="assets", task="graphics_builder"),
     "prepare-preview": ActionSpec(action="prepare-preview", label="Build timeline preview", capability="render", stage="assembly", task="composition_preview"),
     "render-preview": ActionSpec(action="render-preview", label="Render preview", capability="render", stage="assembly", task="composition_renderer"),
     "run-qa": ActionSpec(action="run-qa", label="Run quality check", capability="structured", stage="review", task="final_qc"),
@@ -295,8 +317,10 @@ ACTION_INVALIDATION: dict[str, str] = {
 # These actions write validated checkpoints or independently reusable outputs.
 # Resume keeps them active and starts at the narrowest safe continuation action.
 RESUMABLE_ACTIONS = {
-    "generate-voice", "build-prototype", "repair-prototype", "record-demos",
-    "generate-graphics", "prepare-preview", "render-preview", "render-final",
+    "narrate", "narrate-mock", "mock-voice", "generate-voice", "align-voice",
+    "direct", "direct-mock", "prototype-prompt", "build-prototype",
+    "repair-prototype", "record-demos", "generate-graphics", "prepare-preview",
+    "render-preview", "run-qa", "render-final",
 }
 RESUME_ACTION_MAP = {
     # A failed build that reached validation already contains a prototype; the
@@ -390,6 +414,34 @@ def _artifacts(project: Path, episode_id: str) -> list[Artifact]:
     return found
 
 
+def _whiteboard_scenes(
+    project: Path,
+    episode_id: str,
+    director: DirectorPlan | None,
+) -> list[WhiteboardSceneItem]:
+    if director is None:
+        return []
+    items: list[WhiteboardSceneItem] = []
+    for scene in director.scenes:
+        if scene.renderer not in {"static", "hyperframes"}:
+            continue
+        preview = project / "08_graphics/scenes" / f"{scene.scene_id}.html"
+        preview_url = (
+            f"/graphics/{episode_id}/scenes/{scene.scene_id}.html?render=1&v={preview.stat().st_mtime_ns}"
+            if preview.is_file() else None
+        )
+        items.append(WhiteboardSceneItem(
+            scene_id=scene.scene_id,
+            order=len(items) + 1,
+            purpose=scene.purpose,
+            narration_excerpt=scene.narration_excerpt,
+            duration_seconds=round(scene.end - scene.start, 3),
+            preview_url=preview_url,
+            active_kind="whiteboard" if preview_url else "missing",
+        ))
+    return items
+
+
 def _detail(episode_id: str) -> EpisodeDetail:
     store = _store()
     project = store.project_dir(episode_id)
@@ -446,6 +498,7 @@ def _detail(episode_id: str) -> EpisodeDetail:
         director=director,
         qa=qa_result,
         artifacts=_artifacts(project, episode_id),
+        whiteboard_scenes=_whiteboard_scenes(project, episode_id, director),
         completed_steps=completed,
     )
 
@@ -985,13 +1038,19 @@ def update_episode_duration(episode_id: str, request: EpisodeDurationRequest) ->
     project = store.project_dir(episode_id)
     if not project.exists():
         raise HTTPException(status_code=404, detail="Episode not found")
+    brief = store.brief(episode_id)
+    if brief.target_seconds == request.target_seconds:
+        return _detail(episode_id)
     state = store.state(episode_id)
-    if state.stage != EpisodeStage.INPUT or (project / "01_narration/narration.json").exists():
+    has_timeline = state.stage != EpisodeStage.INPUT or (project / "01_narration/narration.json").exists()
+    if has_timeline and not request.confirm_reset:
         raise HTTPException(
             status_code=409,
-            detail="Duration can only change before narration. Archive from Narration first to rebuild the timeline safely.",
+            detail="Changing duration archives narration and every downstream timeline artifact; confirmation is required.",
         )
-    brief = store.brief(episode_id).model_copy(update={"target_seconds": request.target_seconds})
+    if has_timeline:
+        _invalidate_from_stage(episode_id, "narration")
+    brief = brief.model_copy(update={"target_seconds": request.target_seconds})
     write_json(project / "00_input/episode_brief.json", brief)
     return _detail(episode_id)
 
@@ -1238,8 +1297,9 @@ def start_action(episode_id: str, action: str, request: ActionRequest | None = N
         raise HTTPException(status_code=404, detail="Unknown production action")
     if not _store().project_dir(episode_id).exists():
         raise HTTPException(status_code=404, detail="Episode not found")
+    action_request = request or ActionRequest()
     try:
-        return queue.submit(episode_id, action, request or ActionRequest())
+        return queue.submit(episode_id, action, action_request)
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

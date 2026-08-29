@@ -385,10 +385,13 @@ def record_demos(store: ProjectStore, episode_id: str, *, port: int = 4173) -> l
                 except (OSError, RuntimeError, ValueError):
                     pass
             emit(10 + ((index - 1) / total) * 80, f"Recording {job.job_id}", task="screen_recorder")
-            job_path = project / "05_asset_jobs" / f"{job.job_id}.json"
+            job_path = project / "05_asset_jobs" / f"{job.scene_id.lower()}-{job.job_id}.json"
+            # Write the validated aggregate entry immediately before execution so
+            # repeated Director job IDs cannot make scene contracts overwrite one another.
+            write_json(job_path, job)
             r = subprocess.run([str(node_binary()), str(repo_root / "scripts/record_demo.mjs"), str(job_path), str(project)],
                                cwd=repo_root, capture_output=True, text=True, timeout=600)
-            (project / "06_recordings" / f"{job.job_id}.log").write_text((r.stdout or "") + "\n" + (r.stderr or ""), encoding="utf-8")
+            (project / "06_recordings" / f"{job.scene_id.lower()}-{job.job_id}.log").write_text((r.stdout or "") + "\n" + (r.stderr or ""), encoding="utf-8")
             if r.returncode != 0:
                 raise RuntimeError(f"Playwright recording failed for {job.job_id}: {(r.stderr or r.stdout)[-3000:]}")
             outputs.append(output_path)
@@ -420,11 +423,11 @@ def _wait_for_local_server(server: subprocess.Popen[Any], port: int, *, timeout:
 
 def _attach_recordings_to_plan(project: Path, jobs: list[dict[str, Any]]) -> None:
     plan = load_model(project / "03_director/director_plan.approved.json", DirectorPlan)
-    by_id = {j["job_id"]: j for j in jobs}
+    by_scene = {j["scene_id"]: j for j in jobs}
     scenes = []
     for scene in plan.scenes:
-        if scene.demo_job_id and scene.demo_job_id in by_id:
-            scene = scene.model_copy(update={"generated_asset": by_id[scene.demo_job_id]["output_path"]})
+        if scene.scene_id in by_scene:
+            scene = scene.model_copy(update={"generated_asset": by_scene[scene.scene_id]["output_path"]})
         scenes.append(scene)
     write_json(project / "03_director/director_plan.approved.json", plan.model_copy(update={"scenes": scenes}))
 
@@ -481,7 +484,7 @@ def ensure_demo_jobs(store: ProjectStore, episode_id: str, *, port: int = 4173) 
     bundle = DemoJobBundle(episode_id=episode_id, jobs=jobs)
     write_json(jobs_path, bundle)
     for job in jobs:
-        write_json(project / "05_asset_jobs" / f"{job.job_id}.json", job)
+        write_json(project / "05_asset_jobs" / f"{job.scene_id.lower()}-{job.job_id}.json", job)
     if jobs:
         emit(5, f"Prepared {len(jobs)} validated demo capture contracts", task="screen_recorder")
     return bundle
@@ -507,7 +510,7 @@ def _stage_builder_demo_jobs(project: Path, out_dir: Path) -> DemoJobBundle | No
     target.mkdir(parents=True, exist_ok=True)
     write_json(target / "demo_jobs.json", bundle)
     for job in bundle.jobs:
-        write_json(target / f"{job.job_id}.json", job)
+        write_json(target / f"{job.scene_id.lower()}-{job.job_id}.json", job)
     emit(4, f"Staged {len(bundle.jobs)} builder-authored demo contracts", task="prototype_builder")
     return bundle
 
@@ -563,6 +566,14 @@ def _validate_demo_job(
         raise RuntimeError(f"Demo job {job.job_id} must write a .webm or .mp4 inside 06_recordings")
     if not job.actions:
         raise RuntimeError(f"Demo job {job.job_id} must contain at least one capture action")
+    for action in job.actions:
+        if action.action != "screenshot" or not action.value:
+            continue
+        screenshot = (project / action.value).resolve()
+        if project.resolve() not in screenshot.parents or screenshot.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
+            raise RuntimeError(
+                f"Demo job {job.job_id} screenshots must write a PNG or JPEG inside the episode project"
+            )
     if scene is None or words is None:
         return
     expected_duration = scene.end - scene.start
@@ -1241,11 +1252,22 @@ def _validated_custom_source(
     initial_issues: list[str] | None = None,
     stage_prefix: str = "graphics_coder",
 ) -> tuple[CustomGraphicsSource, list[str]]:
+    """Generate source, then give Codex consolidated validator evidence to repair it.
+
+    Source generation is intentionally allowed to be creative. The validator is
+    the authority on safety and renderer compatibility, so a failed candidate
+    is never surfaced immediately: every measured issue is retained and sent
+    back with the latest source until the bounded repair budget is exhausted.
+    """
     repairs: list[str] = []
     source = initial_source
-    issues = list(initial_issues or [])
-    maximum_attempts = 2
-    for attempt in range(maximum_attempts + 1):
+    issues = list(dict.fromkeys(initial_issues or []))
+    try:
+        maximum_repairs = int(os.environ.get("SVF_CUSTOM_GRAPHICS_SOURCE_REPAIR_ATTEMPTS", "4"))
+    except ValueError:
+        maximum_repairs = 4
+    maximum_repairs = max(1, min(maximum_repairs, 4))
+    for attempt in range(maximum_repairs + 1):
         if source is None:
             prompt = custom_graphics_coder_prompt(layout, graphics_theme=graphics_theme)
             stage = f"{stage_prefix}_{layout.scene_id.lower()}"
@@ -1261,9 +1283,20 @@ def _validated_custom_source(
             return candidate, repairs
         except CustomGraphicsSourceError as exc:
             source = candidate
-            issues = exc.issues
+            issues = list(dict.fromkeys([*issues, *exc.issues]))
             repairs.append(f"attempt {attempt + 1}: " + "; ".join(exc.issues))
-    raise CustomGraphicsSourceError(issues)
+            if attempt < maximum_repairs:
+                emit(
+                    36,
+                    f"{layout.scene_id}: source validation found {len(exc.issues)} issue(s); "
+                    f"sending {len(issues)} consolidated issue(s) to Codex repair "
+                    f"({attempt + 1}/{maximum_repairs})",
+                    task="graphics_builder",
+                )
+    raise CustomGraphicsSourceError([
+        f"repair budget exhausted after {maximum_repairs} repair attempt(s)",
+        *issues,
+    ])
 
 
 def _custom_graphics_scene_worker_count(scene_count: int) -> int:
@@ -1277,9 +1310,9 @@ def _custom_graphics_scene_worker_count(scene_count: int) -> int:
     if scene_count <= 1:
         return 1
     try:
-        requested = int(os.environ.get("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "3"))
+        requested = int(os.environ.get("SVF_CUSTOM_GRAPHICS_CONCURRENCY", "4"))
     except ValueError:
-        requested = 3
+        requested = 4
     return max(1, min(scene_count, requested, 4))
 
 
@@ -1357,6 +1390,56 @@ def _generate_custom_graphics_scene(
     return CustomGraphicsSceneBundle(layout=layout, source=source, repairs=repairs)
 
 
+def _load_custom_scene_checkpoints(
+    project: Path,
+    *,
+    episode_id: str,
+    duration_seconds: float,
+    theme: GraphicsTheme,
+    graphics_scenes: list[Any],
+) -> dict[int, CustomGraphicsSceneBundle]:
+    """Load only scene bundles that still match the approved Director timeline."""
+    expected = {scene.scene_id: (index, scene) for index, scene in enumerate(graphics_scenes)}
+    candidates: dict[str, CustomGraphicsSceneBundle] = {}
+    package_path = project / "08_graphics/custom_graphics.json"
+    if package_path.is_file():
+        try:
+            package = load_model(package_path, CustomGraphicsPackage)
+            if (
+                package.episode_id == episode_id
+                and package.theme == theme
+                and abs(package.duration_seconds - duration_seconds) <= 0.02
+            ):
+                candidates.update({bundle.layout.scene_id: bundle for bundle in package.scenes})
+        except (OSError, ValueError):
+            pass
+    checkpoint_root = project / "_control/graphics_scene_checkpoints"
+    for path in sorted(checkpoint_root.glob("*.json")) if checkpoint_root.is_dir() else []:
+        try:
+            bundle = load_model(path, CustomGraphicsSceneBundle)
+            candidates.setdefault(bundle.layout.scene_id, bundle)
+        except (OSError, ValueError):
+            continue
+
+    accepted: dict[int, CustomGraphicsSceneBundle] = {}
+    for scene_id, bundle in candidates.items():
+        expected_item = expected.get(scene_id)
+        if expected_item is None or bundle.layout.theme != theme:
+            continue
+        index, director_scene = expected_item
+        if (
+            abs(bundle.layout.start - director_scene.start) > 0.02
+            or abs(bundle.layout.end - director_scene.end) > 0.02
+        ):
+            continue
+        try:
+            validate_custom_graphics_source(bundle.layout, bundle.source)
+        except CustomGraphicsSourceError:
+            continue
+        accepted[index] = bundle
+    return accepted
+
+
 def _generate_custom_graphics_plan(
     store: ProjectStore,
     episode_id: str,
@@ -1371,13 +1454,32 @@ def _generate_custom_graphics_plan(
 ) -> GraphicsPlan:
     project = store.project_dir(episode_id)
     request_dir = project / "_requests"
-    worker_count = _custom_graphics_scene_worker_count(len(graphics_scenes))
+    checkpoint_root = project / "_control/graphics_scene_checkpoints"
+    checkpoint_root.mkdir(parents=True, exist_ok=True)
+    indexed_bundles = (
+        {} if consume_response else _load_custom_scene_checkpoints(
+            project,
+            episode_id=episode_id,
+            duration_seconds=director.duration_seconds,
+            theme=brief.graphics_theme,
+            graphics_scenes=graphics_scenes,
+        )
+    )
+    missing_indices = [index for index in range(len(graphics_scenes)) if index not in indexed_bundles]
+    worker_count = _custom_graphics_scene_worker_count(len(missing_indices)) if missing_indices else 0
+    if indexed_bundles:
+        emit(
+            11,
+            f"Resuming from {len(indexed_bundles)} validated whiteboard scene checkpoint(s); "
+            f"{len(missing_indices)} scene(s) remain",
+            task="graphics_builder",
+        )
     emit(
         12,
-        f"Launching {worker_count} isolated graphics scene runner(s) for {len(graphics_scenes)} visual beats",
+        f"Launching {worker_count} isolated graphics scene runner(s) for {len(missing_indices)} remaining visual beats",
         task="graphics_builder",
     )
-    completed = 0
+    completed = len(indexed_bundles)
     progress_lock = Lock()
 
     def report_layout_validated(scene_id: str) -> None:
@@ -1394,7 +1496,9 @@ def _generate_custom_graphics_plan(
             completed += 1
             emit(14 + round(completed / len(graphics_scenes) * 46), f"{scene_id}: custom scene source validated ({completed}/{len(graphics_scenes)})", task="graphics_builder")
 
-    indexed_bundles: dict[int, CustomGraphicsSceneBundle] = {}
+    def save_scene_checkpoint(bundle: CustomGraphicsSceneBundle) -> None:
+        write_json(checkpoint_root / f"{bundle.layout.scene_id}.json", bundle)
+
     job_args = dict(
         store=store, episode_id=episode_id, brief=brief, narration=narration,
         graphics_scenes=graphics_scenes, words=words, agent_kind=agent_kind,
@@ -1402,21 +1506,27 @@ def _generate_custom_graphics_plan(
         on_layout_validated=report_layout_validated,
     )
     if worker_count == 1:
-        for index, scene in enumerate(graphics_scenes):
-            indexed_bundles[index] = _generate_custom_graphics_scene(
+        for index in missing_indices:
+            scene = graphics_scenes[index]
+            bundle = _generate_custom_graphics_scene(
                 scene_index=index, **job_args,
             )
+            indexed_bundles[index] = bundle
+            save_scene_checkpoint(bundle)
             report_scene_complete(scene.scene_id)
-    else:
+    elif worker_count > 1:
         with ThreadPoolExecutor(max_workers=worker_count, thread_name_prefix="graphics-scene") as executor:
             futures = {
                 executor.submit(_generate_custom_graphics_scene, scene_index=index, **job_args): (index, scene)
                 for index, scene in enumerate(graphics_scenes)
+                if index in missing_indices
             }
             try:
                 for future in as_completed(futures):
                     index, scene = futures[future]
-                    indexed_bundles[index] = future.result()
+                    bundle = future.result()
+                    indexed_bundles[index] = bundle
+                    save_scene_checkpoint(bundle)
                     report_scene_complete(scene.scene_id)
             except Exception:
                 for future in futures:
@@ -1437,12 +1547,22 @@ def _generate_custom_graphics_plan(
     )
     emit(72, "Checking custom cue frames, clipping, overlap, and action liveness", task="graphics_builder")
     try:
-        _validate_custom_graphics_visuals(
-            project, fps=brief.fps, width=brief.width, height=brief.height,
-        )
-    except CustomGraphicsVisualValidationError as exc:
+        maximum_visual_repairs = int(os.environ.get("SVF_CUSTOM_GRAPHICS_VISUAL_REPAIR_ATTEMPTS", "4"))
+    except ValueError:
+        maximum_visual_repairs = 4
+    maximum_visual_repairs = max(1, min(maximum_visual_repairs, 4))
+    for visual_round in range(maximum_visual_repairs + 1):
+        try:
+            _validate_custom_graphics_visuals(
+                project, fps=brief.fps, width=brief.width, height=brief.height,
+            )
+            break
+        except CustomGraphicsVisualValidationError as exc:
+            if visual_round >= maximum_visual_repairs:
+                raise
+            visual_report = exc.report
         by_scene: dict[str, list[str]] = {}
-        for finding in exc.report.findings:
+        for finding in visual_report.findings:
             if not finding.issues:
                 continue
             targets = (
@@ -1453,31 +1573,79 @@ def _generate_custom_graphics_plan(
                 by_scene.setdefault(scene_id, []).extend(
                     f"{finding.moment}: {issue}" for issue in finding.issues
                 )
-        repaired_bundles: list[CustomGraphicsSceneBundle] = []
-        for bundle in package.scenes:
+        by_scene = {
+            scene_id: list(dict.fromkeys(issues))
+            for scene_id, issues in by_scene.items()
+        }
+        if not by_scene:
+            raise RuntimeError("Custom graphics visual QA failed without scene-level findings")
+        emit(
+            74 + min(visual_round, 3) * 3,
+            f"Visual QA found measured defects in {len(by_scene)} scene(s); "
+            f"starting repair pass {visual_round + 1}/{maximum_visual_repairs}",
+            task="graphics_builder",
+        )
+
+        def repair_visual_bundle(bundle: CustomGraphicsSceneBundle) -> CustomGraphicsSceneBundle:
             issues = list(dict.fromkeys(by_scene.get(bundle.layout.scene_id, [])))
             if not issues:
-                repaired_bundles.append(bundle)
-                continue
+                return bundle
             emit(
-                78, f"{bundle.layout.scene_id}: repairing measured custom-scene defects",
+                75 + min(visual_round, 3) * 3,
+                f"{bundle.layout.scene_id}: repairing {len(issues)} consolidated visual defect(s)",
                 task="graphics_builder",
             )
-            source, repairs = _validated_custom_source(
-                agent, bundle.layout, graphics_theme=brief.graphics_theme, request_dir=request_dir,
-                initial_source=bundle.source, initial_issues=issues, stage_prefix="graphics_visual",
+            repair_agent = _structured_agent(
+                store,
+                "graphics_builder",
+                {"episode_id": episode_id},
+                agent_kind=agent_kind,
+                consume_response=consume_response,
             )
-            repaired_bundles.append(bundle.model_copy(update={
+            source, repairs = _validated_custom_source(
+                repair_agent, bundle.layout, graphics_theme=brief.graphics_theme, request_dir=request_dir,
+                initial_source=bundle.source,
+                initial_issues=issues,
+                stage_prefix=f"graphics_visual_pass_{visual_round + 1}",
+            )
+            return bundle.model_copy(update={
                 "source": source,
                 "repairs": [*bundle.repairs, *issues, *repairs],
-            }))
+            })
+
+        repair_workers = _custom_graphics_scene_worker_count(len(by_scene))
+        if repair_workers == 1:
+            repaired_bundles = [repair_visual_bundle(bundle) for bundle in package.scenes]
+        else:
+            indexed_repairs: dict[int, CustomGraphicsSceneBundle] = {
+                index: bundle
+                for index, bundle in enumerate(package.scenes)
+                if bundle.layout.scene_id not in by_scene
+            }
+            with ThreadPoolExecutor(
+                max_workers=repair_workers,
+                thread_name_prefix="graphics-visual-repair",
+            ) as executor:
+                futures = {
+                    executor.submit(repair_visual_bundle, bundle): index
+                    for index, bundle in enumerate(package.scenes)
+                    if bundle.layout.scene_id in by_scene
+                }
+                try:
+                    for future in as_completed(futures):
+                        indexed_repairs[futures[future]] = future.result()
+                except Exception:
+                    for future in futures:
+                        future.cancel()
+                    raise
+            repaired_bundles = [indexed_repairs[index] for index in range(len(package.scenes))]
         package = package.model_copy(update={"scenes": repaired_bundles})
+        for repaired_bundle in repaired_bundles:
+            if repaired_bundle.layout.scene_id in by_scene:
+                save_scene_checkpoint(repaired_bundle)
         summary = custom_package_summary(package, creative_thesis=director.visual_thesis)
         write_custom_graphics_package(
             project, package, summary, width=brief.width, height=brief.height, fps=brief.fps,
-        )
-        _validate_custom_graphics_visuals(
-            project, fps=brief.fps, width=brief.width, height=brief.height,
         )
     emit(86, "Building the interactive voice-timed timeline preview", task="graphics_builder")
     build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
@@ -1493,51 +1661,35 @@ def generate_graphics_plan(
     agent_kind: str | None = None,
     consume_response: bool = False,
 ) -> GraphicsPlan:
-    """Plan and compile inspectable graphics before the final composition render."""
+    """Have Codex create validated, word-cued whiteboard SVG scenes."""
     project = store.project_dir(episode_id)
     brief = store.brief(episode_id)
+    if brief.graphics_theme != "whiteboard":
+        brief = brief.model_copy(update={"graphics_theme": "whiteboard"})
+        write_json(project / "00_input/episode_brief.json", brief)
     narration = load_model(project / "01_narration/narration.json", Narration)
     director = load_model(project / "03_director/director_plan.approved.json", DirectorPlan)
     graphics_scenes = [scene for scene in director.scenes if scene.renderer in {"hyperframes", "static"}]
     if not graphics_scenes:
         raise RuntimeError("The approved director plan has no HyperFrames/static graphics scenes")
-    screen_scenes = [scene for scene in director.scenes if scene.renderer == "playwright"]
     words_path = project / "02_voice/audio_word_timestamps.json"
     words = load_model(words_path, WordTimestampBundle) if words_path.is_file() else None
     emit(
         10,
-        f"Planning {len(graphics_scenes)} {brief.graphics_theme} graphics scenes",
+        f"Planning {len(graphics_scenes)} Codex-authored whiteboard SVG scenes",
         task="graphics_builder",
     )
-    configured_mock = False
-    if agent_kind is None:
-        configured_mock = (
-            resolve_task(load_config(store, episode_id), "graphics_builder")["provider_mode"] == "mock"
-        )
-    if agent_kind != "mock" and not configured_mock:
-        return _generate_custom_graphics_plan(
-            store, episode_id, brief=brief, narration=narration, director=director,
-            graphics_scenes=graphics_scenes, words=words, agent_kind=agent_kind,
-            consume_response=consume_response,
-        )
-
-    # Offline/mock mode remains deterministic and does not pretend to be the
-    # custom HTML/CSS/JavaScript engine.
-    plan = _default_graphics_plan(
-        episode_id, director, graphics_scenes, graphics_theme=brief.graphics_theme,
+    return _generate_custom_graphics_plan(
+        store,
+        episode_id,
+        brief=brief,
+        narration=narration,
+        director=director,
+        graphics_scenes=graphics_scenes,
+        words=words,
+        agent_kind=agent_kind,
+        consume_response=consume_response,
     )
-    plan = _prepare_graphics_candidate(
-        plan, brief=brief, director=director, words=words, require_anchors=False,
-    )
-    emit(55, "Graphics contracts validated; compiling scene previews", task="graphics_builder")
-    write_graphics_package(project, plan, width=brief.width, height=brief.height, fps=brief.fps)
-    emit(70, "Checking cue frames, safe bounds, motion, and object overlap", task="graphics_builder")
-    _validate_graphics_visuals(project, plan, fps=brief.fps, width=brief.width, height=brief.height)
-    emit(82, "Building the interactive voice-timed timeline preview", task="graphics_builder")
-    build_composition(project, preview=True, width=brief.width, height=brief.height, fps=brief.fps)
-    store.transition(episode_id, EpisodeStage.COMPOSITION_READY)
-    emit(100, f"Generated {len(plan.scenes)} deterministic mock graphics scenes", task="graphics_builder")
-    return plan
 
 
 def _run_graphics_agent(
@@ -1612,6 +1764,14 @@ def _default_graphics_plan(
     }
     def object_type(label: str) -> str:
         value = label.lower()
+        if any(word in value for word in ("building", "office", "factory", "warehouse", "company", "store")):
+            return "building"
+        if any(word in value for word in ("phone", "mobile", "whatsapp", "telegram", "message", "call")):
+            return "phone"
+        if any(word in value for word in ("warning", "risk", "error", "problem", "failed", "failure")):
+            return "warning"
+        if any(word in value for word in ("done", "success", "approved", "complete", "matched")):
+            return "check"
         if re.search(r"\d", value):
             return "number"
         if any(word in value for word in ("route", "path", "handoff", "flow")):
@@ -1662,7 +1822,7 @@ def _default_graphics_plan(
             if value and key not in seen:
                 seen.add(key)
                 labels.append(value)
-            if len(labels) == 5:
+            if len(labels) == 4:
                 break
         return labels or [display_phrase(scene.purpose, 4)]
 
@@ -1695,7 +1855,7 @@ def _default_graphics_plan(
                     depth=("foreground" if index in {1, len(object_labels)} else "midground"),
                 ),
                 visual_form=f"topic-specific {object_type(label).replace('_', ' ')} depiction",
-                initially_visible=index == 1,
+                initially_visible=False,
             )
             for index, label in enumerate(object_labels, 1)
         ]
@@ -1707,7 +1867,6 @@ def _default_graphics_plan(
                 direction=("right" if index % 2 else "left"),
             )
             for index, item in enumerate(objects, 1)
-            if not item.initially_visible
         ]
         if len(objects) > 1:
             actions.append(GraphicsAction(
@@ -1750,7 +1909,7 @@ def _default_graphics_plan(
     return GraphicsPlan(
         episode_id=episode_id, duration_seconds=director.duration_seconds,
         theme=graphics_theme, creative_thesis=director.visual_thesis, scenes=contracts,
-        warnings=["Deterministic graphics plan used; regenerate with a configured structured model for richer choreography"],
+        warnings=["Rendered locally as bounded SVG/CSS/JavaScript; no image or video generation provider is used"],
     )
 
 

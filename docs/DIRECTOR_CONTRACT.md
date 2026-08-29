@@ -47,12 +47,12 @@ Downstream production is:
 
 ```text
 Director visual_brief
-    -> Codex imagegen keyframe PNG
-    -> detailed drawing-animation prompt
-    -> optional Grok/image-to-video MP4
+    -> Codex-validated whiteboard scene contract
+    -> Codex-created inline SVG
+    -> locked-word-timed CSS/JavaScript animation
 ```
 
-The image stage translates the approved brief; it does not re-plan the scene.
+Codex translates the approved brief into the scene SVG; it does not re-plan the scene.
 
 ### Screen-recording scene
 

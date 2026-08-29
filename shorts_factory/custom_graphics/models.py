@@ -70,8 +70,8 @@ class CustomGraphicsLayoutPlan(BaseModel):
     layout_style: str = Field(min_length=3, max_length=120)
     opening_state: str = Field(min_length=3, max_length=180)
     payoff_state: str = Field(min_length=3, max_length=180)
-    elements: list[CustomGraphicsElement] = Field(min_length=1, max_length=8)
-    actions: list[CustomGraphicsAction] = Field(min_length=1, max_length=18)
+    elements: list[CustomGraphicsElement] = Field(min_length=2, max_length=5)
+    actions: list[CustomGraphicsAction] = Field(min_length=2, max_length=12)
     review_checkpoints: list[float] = Field(min_length=2, max_length=3)
 
     @model_validator(mode="after")

@@ -306,29 +306,24 @@ Missing presenter footage fails soft to a deliberate deterministic placeholder s
 
 ## 9. Generate and review graphics
 
-After screen recordings are attached, click **Generate graphics** or run:
+After screen recordings are attached, click **Build whiteboard animation** or run:
 
 ```bash
 svf generate-graphics pain-102
 ```
 
-The custom graphics engine uses two bounded stages. First, a creative-director model outputs a validated portrait layout contract with concrete visual forms, free-form regions, opening/payoff states, and exact narration anchors. Second, a coding model translates only that approved scene layout into isolated HTML, scoped CSS, inline SVG, and deterministic JavaScript. Independent Director graphics beats use three bounded provider runners by default, preserving their timeline order and continuity context; set `SVF_CUSTOM_GRAPHICS_CONCURRENCY=1` through `4` to override it. The coding stage cannot access the network, global page state, timers, storage, external assets, or another scene. Important actions quote an exact narration anchor and are snapped back to the master word timeline before source compilation. Factory Desk retains:
+The graphics builder sends each approved Director beat and its locked scene-local word timings to Codex. Codex first returns a validated layout contract, then creates the matching simple inline SVG, scoped CSS, and deterministic JavaScript. Every meaningful animation cue must quote an exact consecutive narration phrase; the pipeline snaps that cue to the master word timeline. It uses no image or video generation provider. Factory Desk retains:
 
 ```text
 08_graphics/graphics_plan.json
-08_graphics/custom_graphics.json
 08_graphics/graphics_manifest.json
 08_graphics/scenes/<scene-id>.html
-08_graphics/scene_sources/<scene-id>/layout.json
-08_graphics/scene_sources/<scene-id>/scene.html
-08_graphics/scene_sources/<scene-id>/scene.css
-08_graphics/scene_sources/<scene-id>/scene.js
 08_graphics/master.html
 ```
 
-This follows the stock-Reel evidence workflow: each graphics scene declares one evolving visual world, opening and payoff states, an optional camera move, free-form object frames, narration-timed actions, a continuity object, and two or three stable review checkpoints. Every non-hold action is verified against an exact consecutive Whisper phrase and starts on the first output frame at or after that word. Scene boundaries are stored as contiguous integer frame windows so fractional-time rounding cannot accumulate. New episodes use 60 fps by default; 24, 30, and 60 fps remain valid per-episode formats.
+Each scene preserves Director order and timing. The validated source is scoped to its scene, has no external assets or global browser access, and is checked for containment, clipping, overlap, and observable motion before composition. Scenes are created by up to four isolated Codex workers in parallel, while the output package remains in Director order. Scene boundaries are stored as contiguous integer frame windows so fractional-time rounding cannot accumulate. New episodes use 60 fps by default; 24, 30, and 60 fps remain valid per-episode formats.
 
-A hard layout gate rejects dashboard/card layouts, static reveal-only scenes, missing final-third payoffs, ungrounded narration anchors, future-element leaks, and under-filled portrait compositions before code is accepted. Source validation rejects unscoped CSS, shell overrides, external URLs/assets, unsafe HTML/SVG, global DOM access, network/storage/timer APIs, randomness, event listeners, and dynamic code. After compilation, browser QA seeks every review checkpoint and action window to verify safe-stage containment, clipping, overlap, runtime safety, and observable motion before the timeline preview is accepted. Measured failures repair only the affected scene and preserve accepted neighboring source. If the selected AI provider's usage limit is exhausted, the job stops before accepting a new package. Deterministic output runs when the operator explicitly selects mock/offline generation. Open the graphics master to inspect only the designed scenes. The operator-selected Editorial or Whiteboard theme applies to the whole graphics package; the Director never alternates it.
+Open the ordered scene previews in Factory Desk or the graphics master to inspect the complete animation. The narration remains the master timeline, and HyperFrames remains the primary renderer.
 
 ## 10. QA, preview, and final render
 
@@ -344,7 +339,7 @@ First click **Build timeline preview**, or run:
 svf prepare-preview pain-102
 ```
 
-This is a fast, browser-playable composition under `09_composition/preview/`. It combines the master voice, every screen/presenter recording, deterministic graphics, captions, and exact scene timings. Play it, scrub it, and jump between scenes before spending time rendering frames. Refresh it whenever attached media or graphics change.
+This is a fast, browser-playable composition under `09_composition/preview/`. It combines the master voice, every screen/presenter recording, deterministic graphics, and exact scene timings. Play it, scrub it, and jump between scenes before spending time rendering frames. Refresh it whenever attached media or graphics change.
 
 Resolve blocking issues, approve the browser timeline, then render an MP4 preview:
 

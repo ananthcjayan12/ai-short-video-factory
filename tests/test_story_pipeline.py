@@ -280,7 +280,20 @@ def test_recording_contracts_are_created_for_approved_screen_scenes(tmp_path: Pa
     assert bundle.jobs
     assert all(job.url.endswith(f"#{job.scene_id}") for job in bundle.jobs)
     assert all(job.output_path.startswith("06_recordings/") for job in bundle.jobs)
-    assert all((project / "05_asset_jobs" / f"{job.job_id}.json").is_file() for job in bundle.jobs)
+    assert all(
+        (project / "05_asset_jobs" / f"{job.scene_id.lower()}-{job.job_id}.json").is_file()
+        for job in bundle.jobs
+    )
+
+
+def test_demo_actions_validate_runtime_arguments_and_allow_selector_screenshots():
+    screenshot = DemoAction(action="screenshot", selector='[data-testid="result"]')
+    assert screenshot.value is None
+
+    with pytest.raises(ValueError, match="click actions require a selector"):
+        DemoAction(action="click")
+    with pytest.raises(ValueError, match="assert_text actions require"):
+        DemoAction(action="assert_text", selector='[data-testid="result"]')
 
 
 def test_prototype_prompt_prioritizes_camera_ready_portrait_proof():
@@ -352,4 +365,4 @@ def test_sandbox_local_demo_jobs_are_staged_into_the_episode_contract_folder(tmp
 
     assert staged == bundle
     assert (project / "05_asset_jobs/demo_jobs.json").is_file()
-    assert (project / "05_asset_jobs/demo-s02.json").is_file()
+    assert (project / "05_asset_jobs/s02-demo-s02.json").is_file()

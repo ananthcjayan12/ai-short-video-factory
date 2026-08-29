@@ -536,6 +536,7 @@ GraphicsObjectType = Literal[
     "channel", "document", "process", "decision", "database", "status",
     "metric", "person", "annotation", "text", "artifact", "map_region",
     "route", "boundary", "axis", "number", "quote", "figure", "evidence",
+    "building", "phone", "check", "warning",
 ]
 GraphicsActionType = Literal[
     "reveal", "highlight", "connect", "count_to", "stamp", "transform", "hold",
@@ -556,8 +557,8 @@ class GraphicsFrame(BaseModel):
 
     @model_validator(mode="after")
     def validate_visible_frame(self):
-        if self.x + self.width > 104 or self.y + self.height > 104:
-            raise ValueError("graphics frame extends too far outside the stage")
+        if self.x + self.width > 100 or self.y + self.height > 100:
+            raise ValueError("graphics frame must remain completely inside the stage")
         return self
 
 
@@ -676,6 +677,20 @@ class DemoAction(BaseModel):
     selector: str | None = None
     value: str | None = None
     milliseconds: int | None = None
+
+    @model_validator(mode="after")
+    def validate_action_contract(self):
+        if self.action == "goto" and not self.value:
+            raise ValueError("goto actions require a URL value")
+        if self.action == "click" and not self.selector:
+            raise ValueError("click actions require a selector")
+        if self.action == "upload" and (not self.selector or not self.value):
+            raise ValueError("upload actions require a selector and file value")
+        if self.action == "wait" and self.milliseconds is not None and self.milliseconds < 0:
+            raise ValueError("wait milliseconds must be non-negative")
+        if self.action == "assert_text" and (not self.selector or self.value is None):
+            raise ValueError("assert_text actions require a selector and expected value")
+        return self
 
 
 PrototypeCueAction = Literal[
